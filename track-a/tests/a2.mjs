@@ -711,8 +711,12 @@ async function main() {
 
       const log = [];
       let guard = 0;
-      // Kill everything in the meadow using the real verbs, flanking the guard.
-      while (c.sample().enemiesAlive > 0 && guard++ < 700) {
+      // A2's roster is the Sporeling and the Guard. A4 adds Spitter Flies that
+      // hold station over water and are a tongue problem, not a sword one -
+      // they are cleared in A4's own gate, not here.
+      const remaining = () =>
+        (a.beetle() && a.beetle().alive ? 1 : 0) + (a.spore() && a.spore().alive ? 1 : 0);
+      while (remaining() > 0 && guard++ < 700) {
         const target = a.beetle() && a.beetle().alive ? a.beetle() : a.spore();
         if (!target) break;
         // Behind the shield if it has one; anywhere if it does not.
@@ -730,7 +734,7 @@ async function main() {
         }
       }
       return {
-        cleared: c.sample().enemiesAlive === 0,
+        cleared: remaining() === 0,
         rounds: guard,
         deaths: log.length,
         coins: c.sample().coins,
@@ -738,7 +742,7 @@ async function main() {
     });
     check(
       '7a',
-      'scripted duel clears both enemy types',
+      'scripted duel clears the Sporeling and the Beetle Guard',
       duel.cleared
         ? `meadow cleared in ${duel.rounds} rounds (${duel.deaths} death(s)), purse ${duel.coins}`
         : `still ${duel.rounds} rounds in with enemies alive`,

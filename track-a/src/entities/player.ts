@@ -322,6 +322,7 @@ export function createPlayer(
   const displacement = new THREE.Vector3();
   const hitDir = new THREE.Vector3();
   const swung = new Set<Damageable>();
+  const swungGates = new Set<string>();
 
   const alive = (): boolean => state !== 'dead';
 
@@ -402,8 +403,30 @@ export function createPlayer(
     return best;
   }
 
+  /**
+   * Bramble is not a Damageable - it has no health the player can read and no
+   * hit reaction - so it is swept separately, with the weapon's own claim about
+   * having an edge. A Stick reports false and the thicket merely shudders.
+   */
+  function strikeGates(ctx: GameContext, frames: AttackFrames): void {
+    for (const gate of ctx.gates) {
+      if (!gate.blocking || swungGates.has(gate.id)) continue;
+      const dx = gate.position.x - controller.position.x;
+      const dz = gate.position.z - controller.position.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance > frames.reach + 1.0) continue;
+      if (distance > TOUCHING) {
+        const off = Math.abs(wrapAngle(Math.atan2(dx, dz) - facing));
+        if (off > frames.arc) continue;
+      }
+      swungGates.add(gate.id);
+      gate.strike(frames.damage, WEAPONS[weapon].cutsBramble, ctx);
+    }
+  }
+
   /** Analytic arc overlap on the ground plane - PROMPT.md section 1, no engine. */
   function strike(ctx: GameContext, frames: AttackFrames): void {
+    strikeGates(ctx, frames);
     for (const target of ctx.damageablesFor('player')) {
       if (!target.alive || swung.has(target)) continue;
 
@@ -505,6 +528,9 @@ export function createPlayer(
     const frames = swings[Math.min(index, swings.length - 1)];
     speed = 0;
     swung.clear();
+    // Gates get the same once-per-swing rule as bodies, and the same reset -
+    // without this the first blow marks the thicket and every later one skips it.
+    swungGates.clear();
 
     const target =
       lockTarget !== null && lockTarget.alive ? lockTarget : pickTarget(ctx);

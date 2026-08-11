@@ -314,7 +314,7 @@ Track A first to M4, then Track B starts — A's code is the reference for B's f
   yank-stagger opens Beetle guard, arrival lunge-slash, crosshair aim mode, item
   vacuum. *Gate: scripted test per table row; the pull-attack must land ≥2 on the
   scorecard's "signature move" squint test.*
-- [ ] **A4 — World: Lilypond Downs.** Full authored overworld (Blender GLB or
+- [x] **A4 — World: Lilypond Downs.** Full authored overworld (Blender GLB or
   refined procedural per §1 conventions), 6 secrets (≥3 occlusion), Sword +
   waterfall secret, shrines, key + belfry door, Spitter Fly, 2 pages placed (pickup
   = toast only for now). *Gate: full-zone walkthrough script; secret-path

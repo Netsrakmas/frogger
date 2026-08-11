@@ -100,6 +100,29 @@ interface Emitter {
 }
 
 const EMITTERS: Record<FxKind, Emitter> = {
+  // Bramble giving way: leaf and thorn, thrown outward and downward.
+  brambleCut: {
+    group: 'spore',
+    count: 12,
+    ring: true,
+    radius: 0.5,
+    height: 0.2,
+    floorDrop: 1.0,
+    speedMin: 1.4,
+    speedMax: 3.0,
+    riseMin: 0.6,
+    riseMax: 1.8,
+    sizeMin: 0.09,
+    sizeMax: 0.17,
+    lifeMin: 0.3,
+    lifeMax: 0.5,
+    growth: 0.7,
+    pop: 0.1,
+    drag: 4.5,
+    gravity: -5.5,
+    spread: 0,
+    bias: 0,
+  },
   // The tongue getting a grip: a wet, tight splat at the point of contact.
   tongueHit: {
     group: 'dustPale',

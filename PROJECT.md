@@ -1,6 +1,6 @@
 # Frogger — a Tunic-like with a frog
 
-**Phase:** 2 — build (Track A, milestones A1-A3 done; next is A4 Lilypond Downs)
+**Phase:** 2 — build (Track A, milestones A1-A4 done; next is A5 the Sunken Belfry)
 **Stack:** dual-track: (A) Vite + Three.js + TS (primary), (B) Godot 4 web export (comparison)
 **Repo:** github.com/netsrakmas/frogger
 **Live:** not deployed
@@ -12,7 +12,7 @@ A triple-A-polish demo of a Tunic-like isometric action-adventure starring a fro
 ## Phase log
 - 0 idee — skipped by explicit user decision (verdict: build). User committed to building via gauntlet prompting.
 - 1 plan — done. RESEARCH.md (3 angles: spec craft, Tunic visual grammar, architecture + feel numbers) and PROMPT.md (dual-track master spec, milestones A1–A10, B1–B5, C1) written. Spec-only per user request; build not started.
-- 2 build — in progress. **A1, A2, A3 done** (see milestone log). Next: A4 world.
+- 2 build — in progress. **A1–A4 done** (see milestone log). Next: A5 dungeon.
 - 3 art — not started
 - 4 test — not started
 - 5 ship — not started
@@ -80,6 +80,25 @@ scripted test per row of section 4's mass-rule table. A1/A2 gates still green.
 - Harness bug worth recording: the test drove the stick in SCREEN space without
   rotating by the camera's 45 deg yaw, which pointed the frog 45 deg off and made
   three rows silently measure a whiff. The fix is in `stickFor()`.
+
+**A4 — Lilypond Downs — DONE 2026-08-11.** Gate: `tests/a4.mjs` **15/15**.
+All earlier gates still green (feel 51/51, a2 28/28, a3 16/16, gate 25/25).
+- Six authored secrets, three of them **hidden by the camera rather than by a
+  lock**. The gate does not take that claim on trust: it casts along the
+  camera's own view axis and asserts geometry is in the way for all three, and
+  asserts the other three are genuinely in the open as a control. That control
+  caught a real defect — a secret I had marked camera-hidden was standing in
+  plain sight, and has been moved into the plateau's shadow.
+- Spitter Fly: holds station ~5.8 u away over water where a sword cannot follow,
+  telegraphs before spitting, and is answered by the tongue dragging it out of
+  the air. It is the enemy that makes the tongue necessary rather than optional.
+- Gating: bramble refuses the Stick through 12 swings and yields to the Sword;
+  the belfry door refuses 12 interactions without the key, opens with it, and
+  consumes it.
+- Two shrines, two collectible manual pages, grapple chain across the pond.
+- Real bug found by the gate: the once-per-swing set for gates was never reset
+  between swings, so only a swing's *first* frame ever registered on bramble and
+  every later blow silently did nothing.
 
 ## Open questions
 - Which of the two stacks wins after comparison (decided in/after phase 2).

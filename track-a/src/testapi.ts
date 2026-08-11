@@ -17,6 +17,8 @@ import { THREE_REVISION } from './render/renderer';
 import type { Game } from './game';
 
 /** 20 s of simulation at 60 Hz - longer than any single feel-gate window. */
+/** Far enough back along the view axis to start outside any level geometry. */
+const CAMERA_PROBE_BACKOFF = 60;
 const TRACE_CAP = 1200;
 
 /**
@@ -73,6 +75,47 @@ export function createTestApi(game: Game): TestApi {
     }));
   }
 
+  function gates() {
+    return ctx.gates.map((gate) => ({
+      id: gate.id,
+      kind: gate.kind,
+      open: gate.open,
+      pos: [gate.position.x, gate.position.y, gate.position.z] as [
+        number,
+        number,
+        number,
+      ],
+    }));
+  }
+
+  function secrets() {
+    return ctx.level.secrets.map((secret) => ({
+      id: secret.id,
+      occluded: secret.occluded,
+      pos: [secret.position.x, secret.position.y, secret.position.z] as [
+        number,
+        number,
+        number,
+      ],
+    }));
+  }
+
+  const camDir = new THREE.Vector3();
+  const rayOrigin = new THREE.Vector3();
+  const raycaster = new THREE.Raycaster();
+
+  function hiddenFromCamera(x: number, y: number, z: number): boolean {
+    const camera = ctx.cameraRig.camera;
+    camera.getWorldDirection(camDir);
+    // Orthographic: every eye ray is parallel to the view axis, so back off
+    // along it far enough to start outside the world and look inward.
+    rayOrigin.set(x, y, z).addScaledVector(camDir, -CAMERA_PROBE_BACKOFF);
+    raycaster.set(rayOrigin, camDir);
+    raycaster.far = CAMERA_PROBE_BACKOFF - 0.25;
+    const hits = raycaster.intersectObject(ctx.level.collider, false);
+    return hits.length > 0;
+  }
+
   function pickupList() {
     return ctx.pickups.map((pickup) => ({
       kind: pickup.kind,
@@ -117,6 +160,9 @@ export function createTestApi(game: Game): TestApi {
       pickups: ctx.pickups.length,
       ghosts: ctx.pickups.filter((pickup) => pickup.kind === 'ghost').length,
       shrinesClaimed: ctx.shrines.filter((shrine) => shrine.claimed).length,
+      pages: ctx.progress.pages.length,
+      keys: ctx.progress.keys,
+      gatesOpen: ctx.gates.filter((gate) => gate.open).length,
       trauma: ctx.cameraRig.trauma,
       hitstopRemaining: ctx.loop.hitstopRemaining,
       // Counted for the frame just rendered: three resets these per render(),
@@ -218,6 +264,9 @@ export function createTestApi(game: Game): TestApi {
     enemies,
     shrines,
     posts,
+    gates,
+    secrets,
+    hiddenFromCamera,
     pickupList,
   };
 }

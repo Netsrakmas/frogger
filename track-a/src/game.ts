@@ -25,12 +25,14 @@ import type {
   Loop,
   Pickup,
   Progress,
+  Gate,
   GrapplePost,
   Rng,
   Shrine,
 } from './core/types';
 import {
   DEATH_COIN_DROP,
+  SECRET_COINS,
   DEFAULT_SEED,
   PLAYER_HP_MAX,
   RESPAWN_DELAY,
@@ -47,6 +49,9 @@ import { createLevel } from './world/level';
 import { createPlayer } from './entities/player';
 import { createSporeling } from './entities/sporeling';
 import { createBeetleGuard } from './entities/beetle';
+import { createSpitterFly } from './entities/spitter';
+import { createToken } from './entities/pickup';
+import { createGate } from './world/gate';
 import { createCoin, createGhost, createWeaponPickup } from './entities/pickup';
 import { createShrine } from './world/shrine';
 import { createGrapplePost } from './world/grapple';
@@ -78,6 +83,7 @@ type EnemyFactory = (
 const ENEMY_FACTORIES: Record<string, EnemyFactory | undefined> = {
   sporeling: createSporeling,
   beetleGuard: createBeetleGuard,
+  spitterFly: createSpitterFly,
 };
 
 export function createGame(
@@ -133,9 +139,12 @@ export function createGame(
   const pickups: Pickup[] = [];
   const shrines: Shrine[] = [];
   const grapplePosts: GrapplePost[] = [];
+  const gates: Gate[] = [];
   /** The ghost currently owed to the player. Dying again abandons it for good. */
   let ghost: Pickup | null = null;
   let coins = 0;
+  const pages: number[] = [];
+  let keys = 0;
 
   for (const spawn of level.spawns) {
     if (spawn.type.startsWith('shrine:')) {
@@ -146,6 +155,26 @@ export function createGame(
       grapplePosts.push(
         createGrapplePost(scene, spawn.type.slice('grapple:'.length), spawn.position),
       );
+    } else if (spawn.type.startsWith('bramble:')) {
+      gates.push(
+        createGate(scene, spawn.type.slice('bramble:'.length), 'bramble', spawn.position, spawn.yaw),
+      );
+    } else if (spawn.type.startsWith('door:')) {
+      gates.push(
+        createGate(scene, spawn.type.slice('door:'.length), 'door', spawn.position, spawn.yaw),
+      );
+    } else if (spawn.type.startsWith('page:')) {
+      pickups.push(
+        createToken(scene, spawn.position, 'page', Number(spawn.type.slice('page:'.length))),
+      );
+    } else if (spawn.type === 'secretCoins') {
+      // A secret's payout is real coins on the ground, so finding one reads
+      // exactly like winning a fight rather than like a menu event.
+      for (let n = 0; n < SECRET_COINS; n++) {
+        pickups.push(createCoin(scene, spawn.position, rng.fork(`secret:${spawn.type}:${n}`)));
+      }
+    } else if (spawn.type === 'key') {
+      pickups.push(createToken(scene, spawn.position, 'key'));
     } else if (spawn.type === 'sword') {
       pickups.push(createWeaponPickup(scene, spawn.position, 'sword'));
     }
@@ -162,6 +191,23 @@ export function createGame(
       const taken = Math.min(coins, Math.max(0, Math.round(amount)));
       coins -= taken;
       return taken;
+    },
+    get pages(): readonly number[] {
+      return pages;
+    },
+    addPage(index: number): void {
+      if (!pages.includes(index)) pages.push(index);
+    },
+    get keys(): number {
+      return keys;
+    },
+    addKey(): void {
+      keys++;
+    },
+    spendKey(): boolean {
+      if (keys <= 0) return false;
+      keys--;
+      return true;
     },
   };
 
@@ -185,6 +231,7 @@ export function createGame(
     pickups,
     shrines,
     grapplePosts,
+    gates,
     hud,
     progress,
 
@@ -290,11 +337,17 @@ export function createGame(
   function tickShrines(dt: number): void {
     for (const shrine of shrines) shrine.update(dt, ctx);
     for (const post of grapplePosts) post.update(dt, ctx);
+    for (const gate of gates) gate.update(dt, ctx);
     if (!player.alive || !input.consume('interact')) return;
+    // One interact button, resolved by what is nearest to hand.
     for (const shrine of shrines) {
       if (!shrine.inRange(player.position)) continue;
       rest(shrine);
       return;
+    }
+    for (const gate of gates) {
+      if (!gate.blocking || !gate.inRange(player.position)) continue;
+      if (gate.unlock(ctx)) return;
     }
   }
 
@@ -465,6 +518,8 @@ export function createGame(
       shrines.length = 0;
       for (const post of grapplePosts) post.dispose();
       grapplePosts.length = 0;
+      for (const gate of gates) gate.dispose();
+      gates.length = 0;
       player.dispose();
 
       level.dispose();

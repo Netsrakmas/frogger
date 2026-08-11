@@ -234,6 +234,114 @@ export function createGhost(
   };
 }
 
+// -------------------------------------------------------------- page / key
+
+/**
+ * A folded leaf of the manual, or the belfry key. Both are single tokens that
+ * exist to be found, so they share a body and differ only in what they are
+ * worth and what they look like. A7 turns the pages into the booklet itself.
+ */
+export function createToken(
+  scene: THREE.Scene,
+  position: THREE.Vector3,
+  kind: 'page' | 'key',
+  index = 0,
+): Pickup {
+  const geometry =
+    kind === 'page'
+      ? (() => {
+          // A single leaf with a fold, held upright so it reads at any angle.
+          const sheet = new THREE.BoxGeometry(0.34, 0.44, 0.012);
+          const fold = new THREE.BoxGeometry(0.1, 0.44, 0.012);
+          fold.rotateY(0.5);
+          fold.translate(0.2, 0, 0.03);
+          const merged = mergeGeometries([sheet, fold]);
+          sheet.dispose();
+          fold.dispose();
+          return merged;
+        })()
+      : (() => {
+          const shaft = new THREE.CylinderGeometry(0.035, 0.035, 0.42, 6);
+          const bow = new THREE.TorusGeometry(0.1, 0.032, 5, 9);
+          bow.translate(0, 0.26, 0);
+          const bit = new THREE.BoxGeometry(0.14, 0.06, 0.05);
+          bit.translate(0.07, -0.16, 0);
+          const merged = mergeGeometries([shaft, bow, bit]);
+          shaft.dispose();
+          bow.dispose();
+          bit.dispose();
+          return merged;
+        })();
+
+  const mesh = new THREE.Mesh(
+    geometry,
+    material(kind === 'page' ? 'heroBelly' : 'gold', { emissive: kind === 'key' }),
+  );
+  mesh.castShadow = true;
+  scene.add(mesh);
+
+  const pos = position.clone();
+  let age = 0;
+  let collected = false;
+  let lured = false;
+
+  return {
+    root: mesh,
+    kind: kind as PickupKind,
+    value: index,
+    lure(): void {
+      lured = true;
+    },
+    get alive(): boolean {
+      return !collected;
+    },
+    get position(): THREE.Vector3 {
+      return pos;
+    },
+
+    update(dt: number, ctx: GameContext): void {
+      if (collected) return;
+      age += dt;
+
+      if (ctx.player.alive) {
+        const dx = ctx.player.position.x - pos.x;
+        const dz = ctx.player.position.z - pos.z;
+        const distance = Math.hypot(dx, dz);
+        if (lured && distance > EPS) {
+          const pull = Math.min(distance, COIN_MAGNET_SPEED * 2.2 * dt);
+          pos.x += (dx / distance) * pull;
+          pos.z += (dz / distance) * pull;
+        }
+        if (distance <= COIN_PICKUP_RANGE + ctx.player.hurtRadius) {
+          collected = true;
+          if (kind === 'page') {
+            ctx.progress.addPage(index);
+            ctx.hud.toast('page', ctx.progress.pages.length);
+          } else {
+            ctx.progress.addKey();
+            ctx.hud.toast('key');
+          }
+          ctx.spawnFx('coinPop', new THREE.Vector3(pos.x, pos.y + 0.5, pos.z));
+          mesh.visible = false;
+          return;
+        }
+      }
+
+      mesh.position.set(
+        pos.x,
+        pos.y + 0.5 + Math.sin(age * BOB_RATE * 0.8) * BOB_AMPLITUDE * 1.5,
+        pos.z,
+      );
+      mesh.rotation.y = age * SPIN_RATE * 0.55;
+    },
+
+    dispose(): void {
+      mesh.removeFromParent();
+      geometry.dispose();
+    },
+  };
+}
+
 // ------------------------------------------------------------------- weapon
 
 /**

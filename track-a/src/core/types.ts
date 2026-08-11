@@ -93,12 +93,20 @@ export interface SpawnPoint {
   yaw: number;
 }
 
+/** An authored reward spot. `occluded` ones are hidden by the camera itself. */
+export interface SecretSpot {
+  id: string;
+  occluded: boolean;
+  position: THREE.Vector3;
+}
+
 export interface Level {
   readonly root: THREE.Group;
   /** Merged, invisible collision mesh carrying a BVH. */
   readonly collider: THREE.Mesh;
   readonly spawns: SpawnPoint[];
   readonly playerStart: THREE.Vector3;
+  readonly secrets: SecretSpot[];
   dispose(): void;
 }
 
@@ -216,6 +224,24 @@ export interface Enemy extends Entity, Damageable {
 }
 
 /**
+ * Something in the way. Bramble yields to an edge; the belfry door yields to a
+ * key. Both are locks whose key is a thing you had to go and find.
+ */
+export interface Gate extends Entity {
+  readonly id: string;
+  readonly kind: 'bramble' | 'door';
+  readonly position: THREE.Vector3;
+  readonly open: boolean;
+  /** Collision is withdrawn the moment it opens. */
+  readonly blocking: boolean;
+  inRange(from: THREE.Vector3): boolean;
+  /** A blow landed on it. Returns true if this one actually did something. */
+  strike(damage: number, cuts: boolean, ctx: GameContext): boolean;
+  /** Try to unlock with a key. */
+  unlock(ctx: GameContext): boolean;
+}
+
+/**
  * A fixed point the tongue can haul the frog to. Section 4: grapple posts chain
  * across water gaps, and arriving with momentum feeds an attack.
  */
@@ -228,7 +254,7 @@ export interface GrapplePost extends Entity {
 
 // ------------------------------------------------------------ world objects
 
-export type PickupKind = 'coin' | 'ghost' | 'weapon';
+export type PickupKind = 'coin' | 'ghost' | 'weapon' | 'page' | 'key';
 
 export interface Pickup extends Entity {
   readonly kind: PickupKind;
@@ -260,6 +286,13 @@ export interface Progress {
   add(amount: number): void;
   /** Removes up to `amount` and returns what was actually taken. */
   take(amount: number): number;
+  /** Manual pages found, by index. A7 turns these into the booklet. */
+  readonly pages: readonly number[];
+  addPage(index: number): void;
+  readonly keys: number;
+  addKey(): void;
+  /** True if a key was available and has now been spent on a door. */
+  spendKey(): boolean;
 }
 
 // ------------------------------------------------------------------------ fx
@@ -276,12 +309,14 @@ export type FxKind =
   | 'shrineRest'
   /** The tongue latching onto something solid. */
   | 'tongueHit'
+  /** Bramble giving way to an edge. */
+  | 'brambleCut'
   /** Arrival slash at the end of a grapple pull - the Death's Door move. */
   | 'lungeSlash';
 
 // ------------------------------------------------------------------------ ui
 
-export type ToastIcon = 'coins' | 'weapon' | 'rested';
+export type ToastIcon = 'coins' | 'weapon' | 'rested' | 'page' | 'key';
 
 export interface Hud {
   readonly root: HTMLElement;
@@ -320,6 +355,7 @@ export interface GameContext {
   readonly pickups: Pickup[];
   readonly shrines: Shrine[];
   readonly grapplePosts: GrapplePost[];
+  readonly gates: Gate[];
   readonly hud: Hud;
   readonly progress: Progress;
   addTrauma(amount: number): void;
@@ -355,6 +391,9 @@ export interface GameSample {
   pickups: number;
   ghosts: number;
   shrinesClaimed: number;
+  pages: number;
+  keys: number;
+  gatesOpen: number;
   trauma: number;
   hitstopRemaining: number;
   drawCalls: number;
@@ -408,6 +447,14 @@ export interface TestApi {
   enemies(): EnemySnapshot[];
   shrines(): ShrineSnapshot[];
   posts(): ShrineSnapshot[];
+  gates(): { id: string; kind: string; open: boolean; pos: [number, number, number] }[];
+  secrets(): { id: string; occluded: boolean; pos: [number, number, number] }[];
+  /**
+   * Is this point hidden from the fixed camera by level geometry? Cast along
+   * the camera's own view axis - the only honest way to ask whether a "secret
+   * behind something" really is behind something.
+   */
+  hiddenFromCamera(x: number, y: number, z: number): boolean;
   pickupList(): PickupSnapshot[];
 }
 

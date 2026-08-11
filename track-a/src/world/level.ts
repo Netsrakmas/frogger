@@ -180,8 +180,57 @@ const ACTIVE_SPORELINGS = 1;
 const BEETLE_SPOTS: readonly { x: number; z: number }[] = [{ x: -6.0, z: 2.5 }];
 const SHRINE_SPOTS: readonly { id: string; x: number; z: number }[] = [
   { id: 'downs', x: 1.5, z: 12.5 },
+  // The second sits by the belfry door, so the walk back after a death in the
+  // dungeon's doorway is short enough to stay a lesson rather than a punishment.
+  { id: 'belfrygate', x: 4.4, z: -12.2 },
 ];
-const SWORD_SPOT = { x: 8.5, z: -1.0 };
+/**
+ * A4's authored zone. Six secrets, of which THREE are hidden by the camera
+ * rather than by a door - Tunic's actual trick. At a fixed -40 degree pitch and
+ * 45 degree yaw, anything standing between the camera and a patch of ground
+ * hides that ground completely, and the orthographic projection means the gap
+ * never opens up as you approach. So a path behind the plateau's shoulder, a
+ * hollow behind the big ruin, and the ledge under the waterfall are all simply
+ * invisible until walked into. They are marked here as OCCLUDED so the gate can
+ * assert the count rather than trusting the level designer's memory.
+ */
+interface Secret {
+  id: string;
+  x: number;
+  z: number;
+  /** Hidden by geometry between the camera and the spot, not by a lock. */
+  occluded: boolean;
+  reward: string;
+}
+
+const SECRETS: readonly Secret[] = [
+  // 1. Behind the waterfall on the plateau's face: the Sword.
+  { id: 'waterfall', x: -10.5, z: -12.4, occluded: true, reward: 'sword' },
+  // 2. The hollow behind the great ruin, invisible from the fixed camera.
+  { id: 'ruinHollow', x: -14.2, z: 6.4, occluded: true, reward: 'page:0' },
+  // 3. Meadow in the plateau's shadow. Standing just west of the mesa, this
+  //    ground is behind 2.4 u of rock on the camera's view axis and simply is
+  //    not drawn until you walk into it - the orthographic projection means it
+  //    never opens up as you approach either.
+  { id: 'plateauShadow', x: -16.5, z: -7.0, occluded: true, reward: 'coins' },
+  // 4. Across the pond, reachable only by the grapple chain.
+  { id: 'farBank', x: 17.4, z: -7.2, occluded: false, reward: 'page:1' },
+  // 5. Behind the bramble the Sword opens.
+  { id: 'thicket', x: 13.2, z: 8.6, occluded: false, reward: 'coins' },
+  // 6. The old ruin the belfry key sits in.
+  { id: 'keepStone', x: -13.0, z: 13.4, occluded: false, reward: 'key' },
+];
+
+const SWORD_SPOT = { x: SECRETS[0].x, z: SECRETS[0].z };
+const BRAMBLE_SPOTS: readonly { id: string; x: number; z: number }[] = [
+  { id: 'thicket', x: 11.6, z: 7.6 },
+];
+const DOOR_SPOT = { id: 'belfry', x: 2.0, z: -14.6, yaw: 0 };
+const SPITTER_SPOTS: readonly { x: number; z: number }[] = [
+  // Over the water, where a sword cannot follow.
+  { x: 12.2, z: -5.0 },
+  { x: 15.0, z: -8.4 },
+];
 /**
  * A3's grapple chain. Two posts step out across the pond and one waits on the
  * far rim, so the only dry way over is tongue-post-tongue - the moment the verb
@@ -683,6 +732,45 @@ export function createLevel(rng: Rng): Level {
     });
   }
 
+  for (const spot of SPITTER_SPOTS) {
+    spawns.push({
+      type: 'spitterFly',
+      position: new THREE.Vector3(spot.x, height(spot.x, spot.z), spot.z),
+      yaw: 0,
+    });
+  }
+
+  for (const spot of BRAMBLE_SPOTS) {
+    spawns.push({
+      type: `bramble:${spot.id}`,
+      position: new THREE.Vector3(spot.x, height(spot.x, spot.z), spot.z),
+      yaw: 0,
+    });
+  }
+
+  spawns.push({
+    type: `door:${DOOR_SPOT.id}`,
+    position: new THREE.Vector3(
+      DOOR_SPOT.x,
+      height(DOOR_SPOT.x, DOOR_SPOT.z),
+      DOOR_SPOT.z,
+    ),
+    yaw: DOOR_SPOT.yaw,
+  });
+
+  // Each secret pays out whatever it was authored to hold.
+  for (const secret of SECRETS) {
+    if (secret.reward === 'sword') continue; // placed below, with the waterfall
+    const at = new THREE.Vector3(secret.x, height(secret.x, secret.z), secret.z);
+    if (secret.reward === 'key') {
+      spawns.push({ type: 'key', position: at, yaw: 0 });
+    } else if (secret.reward.startsWith('page:')) {
+      spawns.push({ type: secret.reward, position: at, yaw: 0 });
+    } else {
+      spawns.push({ type: 'secretCoins', position: at, yaw: 0 });
+    }
+  }
+
   for (const spot of GRAPPLE_SPOTS) {
     spawns.push({
       type: `grapple:${spot.id}`,
@@ -706,6 +794,11 @@ export function createLevel(rng: Rng): Level {
     collider,
     spawns,
     playerStart,
+    secrets: SECRETS.map((secret) => ({
+      id: secret.id,
+      occluded: secret.occluded,
+      position: new THREE.Vector3(secret.x, height(secret.x, secret.z), secret.z),
+    })),
 
     dispose(): void {
       colliderGeo.disposeBoundsTree();

@@ -327,6 +327,28 @@ export const BEETLE_BLOCK_KNOCKBACK = 1.6;
 export const BEETLE_BLOCK_TRAUMA = 0.12;
 export const BEETLE_BLOCK_HITSTOP = f(3);
 
+/** Ranged, hovers over water, and drops out of the air to a tongue. */
+export const SPITTER_FLY: EnemyStats = {
+  hp: 2,
+  moveSpeed: 2.0,
+  aggroRange: 11.0,
+  attackRange: 8.0,
+  telegraph: f(40),
+  active: f(6),
+  recovery: f(40),
+  damage: 1,
+  mass: 'light',
+};
+/** It keeps this far off, which is what makes it a tongue problem. */
+export const SPITTER_STANDOFF = 5.5; // u
+export const SPITTER_HOVER = 1.15; // u above the ground
+export const GLOB_SPEED = 9.0; // u/s
+export const GLOB_RANGE = 12.0; // u
+export const GLOB_RADIUS = 0.18; // u
+export const COIN_DROP_SPITTER = 5;
+/** What a secret with no unique item in it is worth. */
+export const SECRET_COINS = 12;
+
 // ------------------------------------------------------------------- coins
 export const COIN_DROP_SPORELING = 4;
 export const COIN_DROP_BEETLE = 9;
@@ -336,6 +358,12 @@ export const COIN_MAGNET_SPEED = 9.0;
 export const COIN_PICKUP_RANGE = 0.55;
 /** Coins are inert for a beat so a kill's spray cannot be collected mid-air. */
 export const COIN_SETTLE = 0.35;
+
+// ------------------------------------------------------- gates and secrets
+/** Bramble only yields to an edge, so it is a lock the Sword is the key to. */
+export const BRAMBLE_HP = 3;
+/** How close the frog must be to open the belfry door, holding the key. */
+export const DOOR_INTERACT_RANGE = 2.4;
 
 // ------------------------------------------------------------------ shrines
 export const SHRINE_INTERACT_RANGE = 2.2;
