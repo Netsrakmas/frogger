@@ -1,0 +1,210 @@
+/**
+ * CROAK - feel constants. PROMPT.md section 5.
+ *
+ * THIS IS THE SINGLE SOURCE OF TRUTH FOR EVERY GAMEPLAY TUNABLE.
+ * No gameplay number may be inlined anywhere else in the codebase.
+ * Frames are at 60 fps. World units: the frog is ~1u tall.
+ */
+
+/** Simulation runs at a fixed 60 Hz. */
+export const TICK_HZ = 60;
+export const TICK_DT = 1 / TICK_HZ;
+/** Accumulator clamp - never step more than this many times in one frame. */
+export const MAX_STEPS_PER_FRAME = 5;
+
+/** Frames -> seconds. Gameplay code should express durations in frames. */
+export const f = (frames: number): number => frames / TICK_HZ;
+
+// ---------------------------------------------------------------- movement
+export const MOVE_SPEED = 5.0; // u/s
+export const ACCEL_TIME = f(4); // s to reach full speed
+export const DECEL_TIME = f(3); // s to full stop
+/** Frog turns to face movement direction at this rate. */
+export const TURN_RATE = 14.0; // rad/s
+
+// -------------------------------------------------------------------- roll
+export const ROLL_DURATION = f(26);
+/** i-frames span frames 1..14 of the roll: "invulnerable for the first half". */
+export const ROLL_IFRAME_START = f(1);
+export const ROLL_IFRAME_END = f(14);
+export const ROLL_DISTANCE = 3.0; // u
+/** Fraction of the stamina bar one roll costs. */
+export const ROLL_STAMINA = 0.27;
+/** Roll speed curve: fast out, settle. Sampled over normalised roll time. */
+export const ROLL_SPEED_CURVE = (t: number): number => 1 - Math.pow(t, 2.2);
+
+// ----------------------------------------------------------------- stamina
+export const STAMINA_MAX = 1.0;
+/** Bar refills over this many seconds once regen starts. */
+export const STAMINA_REGEN_RATE = 0.55; // per second
+export const STAMINA_REGEN_DELAY = 0.8; // s after any spend
+export const STAMINA_REGEN_DELAY_EMPTY = 1.5; // s after hitting zero
+/** Tunic's forgiveness-with-a-cost: rolling at zero stamina still works. */
+export const ZERO_STAMINA_DMG_MULT = 1.5;
+
+// ------------------------------------------------------------------- input
+export const INPUT_BUFFER = f(9); // 150 ms
+export const COYOTE = f(6); // 100 ms
+
+// ------------------------------------------------------------------ attack
+export interface AttackFrames {
+  windup: number;
+  active: number;
+  recovery: number;
+  /** Portion of recovery (from its start) during which a roll may cancel. */
+  rollCancelFrom: number;
+  damage: number;
+  hitstop: number;
+  knockback: number;
+  /** Half-angle of the damage arc, radians. */
+  arc: number;
+  reach: number;
+}
+
+export const LIGHT_ATK: AttackFrames = {
+  windup: f(7),
+  active: f(5),
+  recovery: f(12),
+  rollCancelFrom: 0, // roll-cancellable for the whole recovery
+  damage: 1,
+  hitstop: f(4),
+  knockback: 2.0,
+  arc: Math.PI * 0.42,
+  reach: 1.9,
+};
+
+export const HEAVY_ATK: AttackFrames = {
+  windup: f(24),
+  active: f(6),
+  recovery: f(18),
+  rollCancelFrom: f(6),
+  damage: 3,
+  hitstop: f(7),
+  knockback: 3.2,
+  arc: Math.PI * 0.55,
+  reach: 2.3,
+};
+
+/** Combo: next attack may be buffered during active+recovery of the current one. */
+export const COMBO_WINDOW_FROM = f(7); // frames into the attack
+export const STICK_COMBO_LENGTH = 2;
+export const SWORD_COMBO_LENGTH = 3;
+
+// ------------------------------------------------------------------ hitstop
+export const HITSTOP_LIGHT = f(4);
+export const HITSTOP_HEAVY = f(7);
+export const HITSTOP_KILL = f(7);
+
+// ------------------------------------------------------------------- shake
+/** Screenshake is trauma-squared, Perlin-driven, ROTATIONAL-ONLY in 3D. */
+export const SHAKE_MAX_OFFSET = 0.4; // u, camera-plane
+export const SHAKE_MAX_ROLL = (1.5 * Math.PI) / 180; // rad
+export const SHAKE_DECAY = 1.2; // trauma per second
+export const SHAKE_FREQ = 18; // Hz
+export const SHAKE_CAP = 1.0;
+export const TRAUMA_HIT = 0.2;
+export const TRAUMA_PLAYER_HURT = 0.4;
+export const TRAUMA_BOSS_SLAM = 0.6;
+
+// --------------------------------------------------------------- knockback
+export const KNOCKBACK_SMALL_ENEMY = 2.0; // u
+export const KNOCKBACK_PLAYER = 1.2; // u
+export const PLAYER_HITSTUN = 0.25; // s
+export const PLAYER_IFRAMES_AFTER_HIT = 0.6; // s
+
+// ------------------------------------------------------------------ tongue
+export const TONGUE_RANGE = 7.0; // u
+export const TONGUE_EXTEND_SPEED = 35.0; // u/s
+export const TONGUE_RETRACT_SPEED = 25.0; // u/s
+export const TONGUE_WHIFF_RECOVERY = f(15);
+export const TONGUE_PULL_SELF_SPEED = 18.0; // u/s
+export const TONGUE_YANK_DISTANCE = 1.5; // u
+export const TONGUE_YANK_STAGGER = f(40);
+/** Elastic overshoot on extend, then settle. */
+export const TONGUE_OVERSHOOT = 0.05;
+
+// ------------------------------------------------------------------ lock-on
+export const LOCKON_CONE = (60 * Math.PI) / 180; // half-cone from facing
+export const LOCKON_RANGE = 9.0; // u
+export const LOCKON_DROP_RANGE = 12.0; // u
+export const LOCKON_OCCLUSION_DROP = 1.0; // s
+export const MAGNETIZE_LUNGE = 1.5; // u max
+
+// ------------------------------------------------------------------ squash
+export const SQUASH_IMPACT = 0.88;
+export const SQUASH_HOP = 1.15;
+export const SQUASH_RECOVER = 9.0; // spring rate back to 1.0
+
+// ------------------------------------------------------------------- audio
+export const SFX_PITCH_VARIANCE = 0.06; // +/- 6% on every repeated sound
+
+// ------------------------------------------------------------------ health
+export const PLAYER_HP_MAX = 6;
+export const DEATH_COIN_DROP = 20;
+
+// ------------------------------------------------------------------ camera
+/** Orthographic, immutable to the player. Pitch/yaw are authored per zone. */
+export const CAM_PITCH = (-40 * Math.PI) / 180;
+export const CAM_YAW = (45 * Math.PI) / 180;
+/** Vertical frustum height in world units - this is the zoom control. */
+export const CAM_VIEW_HEIGHT = 14.0;
+export const CAM_DISTANCE = 40.0; // pull-back along the view axis (ortho: framing only)
+/** Damped follow: fraction of remaining distance closed per second. */
+export const CAM_FOLLOW_LAMBDA = 6.0;
+/** Lock-on tilts the camera slightly higher. */
+export const CAM_LOCKON_PITCH_DELTA = (-3 * Math.PI) / 180;
+export const CAM_NEAR = 0.1;
+export const CAM_FAR = 200;
+
+// ------------------------------------------------------------------ enemies
+export const ENEMY_TELEGRAPH_MIN = f(36); // 600 ms, with flash + audio at windup start
+
+export interface EnemyStats {
+  hp: number;
+  moveSpeed: number;
+  aggroRange: number;
+  /** Distance at which it commits to an attack. */
+  attackRange: number;
+  telegraph: number;
+  active: number;
+  recovery: number;
+  damage: number;
+  /** Mass class drives the tongue's mass rule. */
+  mass: 'light' | 'medium' | 'heavy';
+}
+
+export const SPORELING: EnemyStats = {
+  hp: 2,
+  moveSpeed: 2.4,
+  aggroRange: 8.0,
+  attackRange: 1.3,
+  telegraph: ENEMY_TELEGRAPH_MIN,
+  active: f(8),
+  recovery: f(28),
+  damage: 1,
+  mass: 'light',
+};
+
+// ------------------------------------------------------------------ physics
+export const PLAYER_RADIUS = 0.36;
+export const PLAYER_HEIGHT = 1.0; // total capsule height
+export const GRAVITY = -22.0; // u/s^2
+export const MAX_SLOPE = (50 * Math.PI) / 180;
+export const STEP_HEIGHT = 0.35;
+export const GROUND_SNAP = 0.3;
+
+// --------------------------------------------------------------------- rng
+/** Fixed seed keeps spawns/drops deterministic. */
+export const DEFAULT_SEED = 0x0c20a4;
+
+// ------------------------------------------------------------------ render
+export const DPR_CAP = 2;
+export const SHADOW_MAP_SIZE = 2048;
+/** Shadow frustum follows the player; tight fit is what keeps iso shadows crisp. */
+export const SHADOW_EXTENT = 15.0; // half-size, so 30x30 u
+export const SHADOW_NORMAL_BIAS = 0.02;
+export const SHADOW_BIAS = -0.0005;
+export const FOG_NEAR = 26;
+export const FOG_FAR = 70;
+/** Additive vertical screen gradient strength (PROMPT.md section 8). */
+export const SCREEN_GRADIENT_STRENGTH = 0.12;
