@@ -1,6 +1,6 @@
 # Frogger — a Tunic-like with a frog
 
-**Phase:** 1 — plan (research + spec in progress)
+**Phase:** 1 — plan (done; ready for phase 2 build via gauntlet prompting)
 **Stack:** dual-track: (A) Vite + Three.js + TS (primary), (B) Godot 4 web export (comparison)
 **Repo:** github.com/netsrakmas/frogger
 **Live:** not deployed
@@ -11,8 +11,8 @@ A triple-A-polish demo of a Tunic-like isometric action-adventure starring a fro
 
 ## Phase log
 - 0 idee — skipped by explicit user decision (verdict: build). User committed to building via gauntlet prompting.
-- 1 plan — in progress. Research agents running; RESEARCH.md + PROMPT.md to follow.
-- 2 build — not started (will be done later via gauntlet prompting, per user)
+- 1 plan — done. RESEARCH.md (3 angles: spec craft, Tunic visual grammar, architecture + feel numbers) and PROMPT.md (dual-track master spec, milestones A1–A10, B1–B5, C1) written. Spec-only per user request; build not started.
+- 2 build — not started. Next session: Track A milestone A1 per PROMPT.md §11–§12.
 - 3 art — not started
 - 4 test — not started
 - 5 ship — not started

@@ -129,3 +129,52 @@ Shadows graded blue/violet-rich, never grey-black; highlights warm; pastel-cappe
 7. Saturated-but-soft; bloom only where meaning is (glow = importance).
 8. Per-zone palette identity under one light recipe.
 9. The 2D layer is analog (hand-drawn, scanned, stained, halftoned).
+
+## Addendum 2026-08-11 — Angle 3: architecture + game-feel numbers (both stacks)
+
+Numbers marked [sourced] have a named source; [synth] = starting values synthesized from adjacent sourced data.
+
+### Combat feel numbers
+- **Dodge roll:** DS1/DS3 fast roll ≈ 13 i-frames @30fps (~433 ms) [sourced]; Hades dash fully invulnerable, cancelled by attacking mid-dash [sourced]; **Tunic: invulnerable for roughly the first half of the roll, dust cloud = the i-frame tell; empty-stamina rolls still work but you take extra damage** [sourced]. [synth @60fps]: roll 24–30 f total, i-frames 1–16 (~250 ms), distance 2.5–3.5× character radius, stamina ~25–30% of bar, regen delay ~800 ms (1.5 s from zero).
+- **Telegraphs:** casual reaction rule of thumb 0.25 s+; real enemy attacks run 1.0–1.6 s full motion, hit active 0.5–0.7 s in [sourced]. [synth]: enemy telegraph ≥30–45 f (500–750 ms) with flash + audio at windup start.
+- **Player attacks [synth]:** light slash windup 6–8 f, active 4–6 f, recovery 10–14 f (~350 ms), 3-hit combo, roll-cancellable in recovery; heavy windup 20–30 f.
+- **Hit-stop:** generic guidance 40–80 ms [sourced]; Smash formula frames = ⌊dmg×0.65+6⌋, applies to both parties [sourced]. [synth]: light 3–4 f, heavy/kill 6–8 f; freeze both, particles keep running.
+- **Screenshake:** Eiserloh GDC 2016 trauma model — trauma∈[0,1], shake = trauma², Perlin noise displacement, **rotational-only recommended in 3D**, always clamp [sourced]. [synth iso-ortho]: max offset 0.3–0.5 u, max roll 1–2°, decay 1.0–1.5/s, noise 15–25 Hz; +0.2 light hit / +0.4 player hurt / +0.6 boss slam.
+- **Input buffer 100–150 ms; coyote 83–133 ms** [sourced: gamejuice.co.uk]. Celeste forgiveness kit: buffering, coyote, corner correction [sourced].
+- **Stamina anchor:** DS3 regen 45/s, ~4–5 rolls per bar [sourced].
+- **Lock-on [synth]:** soft-lock scoring `angle×w1 + dist×w2` in ~60° cone, 8–10 u range; attacks magnetize (rotate + lunge ≤1.5 u) — the Tunic/Death's Door feel.
+
+### Tongue/grapple — reference taxonomy and the MASS RULE
+- **Frogun** (closest reference): tongue-as-grapple sticks to walls/points and reels player in; grabs items/enemies and pulls them to player to carry/throw; chain-grapples; optional aim mode [sourced].
+- **Death's Door hookshot:** pulls player to target; **melee during the pull = wide powerful arrival slash** — the most-praised interaction [sourced]. Sekiro: marked grapple points, grapple attack converts momentum into a strike [sourced]. Doom Eternal Meat Hook: pull-self-to-enemy as combat mobility [sourced].
+- **Mass rule** (consistent pattern): target lighter than player → pull target to you (arrives stunned/held); heavier/anchored → pull yourself to it, arrival feeds an attack; medium [synth] → stagger + yank 1–2 u.
+- [synth] tuning: range 6–8 u (~3–4 body lengths), extend 30–40 u/s (max range in ~0.2 s), retract 20–30 u/s, whiff recovery ~15 f, player-pull travel 15–20 u/s, attack-during-pull = lunge slash; item/page pickup at full range.
+
+### Three.js stack
+- **Structure:** lightweight composition, NOT full ECS at demo scale; Entity{root: Object3D, components} + systems; Three objects are views, game state is data. Anti-pattern: extending THREE.Mesh per game class.
+- **Loop:** fixed timestep 1/60 accumulator, render interpolation, clamp ~5 steps (Gaffer pattern).
+- **Physics:** Option 1 Rapier WASM (~500 KB, KinematicCharacterController built in); Option 2 three-mesh-bvh capsule shapecast on level mesh (official characterMovement example). Combat hitboxes: analytic arc/sphere overlaps in ground plane — no engine needed. Enemies: circle separation.
+- **Iso camera:** OrthographicCamera, pitch −30…−55°, yaw 45°, damped follow; zoom via frustum height, never FOV. **Shadows: fit directional shadow frustum tightly (~30×30 u around player, snapped to texel grid), mapSize 2048², normalBias ~0.02.**
+- **Toon:** MeshToonMaterial + 3–4 px ramp with NearestFilter; outlines = inverted hull on characters + optional depth-edge full-screen pass. **Post: pmndrs `postprocessing`** (merges effects into one pass) — Bloom + Vignette + SMAA; **skip SSAO** (cost, and flat-shaded toon doesn't need it — bake AO into vertex colors).
+- **Levels:** Blender → GLB; name-prefix conventions parsed at load: `COL_` collision, `SPAWN_x`, `TRIGGER_`, `GRAPPLE_`; collision mesh separate and low-poly; greybox in code, real levels in Blender.
+- Budget [synth]: ≤150 draw calls, merged static geometry, one shadow light, 60 fps @1080p mid-range laptop.
+
+### Godot 4 stack
+- Player = CharacterBody3D + capsule; node-per-state StateMachine (enter/exit/physics_update); AnimationTree call-method tracks toggle hitboxes (frame data lives in animations); attacks as custom Resource .tres. Camera3D orthogonal, fixed rotation. Autoloads only for SaveManager/AudioRouter/GameEvents.
+- Toon: `render_mode diffuse_toon, specular_toon` or ramp shader; outline via second pass cull_front inverted hull. Compatibility-renderer-safe.
+- **Web export gotchas (critical):**
+  1. **Compatibility renderer ONLY (WebGL 2)** — Forward+/Mobile do not work on web. Design for it from day one.
+  2. Threads need COOP/COEP headers; **single-threaded export (4.3+) is default/recommended** — works everywhere.
+  3. **GitHub Pages can't set headers** → single-threaded export, or PWA/coi-serviceworker shim.
+  4. Audio: sample mode = no bus effects; browsers block autoplay → "click to start" screen required.
+  5. Safari/iOS: single-threaded works well; threaded historically broken.
+  6. Size: engine wasm ~40 MB raw / ~5 MB brotli / ~10 MB gzip; custom template + wasm-opt → ~23 MB.
+  7. **C# cannot export to web in Godot 4 — GDScript only.**
+  8. Serve .wasm as application/wasm.
+
+### Tunic system patterns
+- Shrine checkpoints: resting refills health/potions AND respawns regular enemies (bonfire pattern). Death: respawn at last shrine, drop ~20 coins as ghost at death spot, one retrieval chance.
+- Save: serialize {spawnShrineId, stats, flags, pages[], coins} → localStorage (web) / user:// (Godot web = IndexedDB).
+- Manual UI: pause-menu two-page spread, pages indexed by world order so gaps show as "? ?" slots (the collection hook), full-screen reveal on pickup, diagrams over text, one page = annotated area map.
+
+Coverage notes: Hades dash seconds and BotW flurry frames unpublished; several primary blogs proxy-blocked, numbers quoted via search extracts.
