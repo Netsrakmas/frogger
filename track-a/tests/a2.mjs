@@ -758,14 +758,17 @@ async function main() {
         const c = window.__croak;
         const a = window.__a2;
         const round = (v) => v.map((n) => n.toFixed(6)).join(',');
-        // Enemies start walking the moment they see the frog, so a snapshot
-        // taken "as soon as the page loads" is a wall-clock snapshot. Anchor it
-        // to a fixed SIMULATION time and the positions become a seed property.
-        await a.waitFor((k) => k.sample().simTime >= 0.5, 900);
+        // Enemies start walking the moment they see the frog, and several
+        // simulation steps can land inside one rendered frame - so "the first
+        // frame at simTime >= 0.5" is not the same step twice running, and
+        // comparing walking bodies here measures the harness, not the seed.
+        // Their POSITIONS are checked step-for-step in gate.mjs, where the
+        // inputs are matched per simulation step; what is compared here is what
+        // the seed decides and time does not: the roster and the fixed props.
         const world = {
-          enemies: c.enemies().map((e) => `${e.kind}@${round(e.pos)}`).join('|'),
-          shrines: c.shrines().map((s) => `${s.id}@${round(s.pos)}`).join('|'),
-          pickups: c.pickupList().map((k) => `${k.kind}@${round(k.pos)}`).join('|'),
+          enemies: c.enemies().map((e) => e.kind).sort().join('|'),
+          shrines: c.shrines().map((s) => `${s.id}@${round(s.pos)}`).sort().join('|'),
+          pickups: c.pickupList().map((k) => `${k.kind}@${round(k.pos)}`).sort().join('|'),
         };
         // Kill the Sporeling through the real damage path, then get clear of
         // COIN_MAGNET_RANGE so the payout is measured on the ground rather
@@ -811,11 +814,11 @@ async function main() {
     const runB = await layout();
     check(
       '8a',
-      'same seed lays out the same world',
+      'same seed lays out the same roster and props',
       runA.world.enemies === runB.world.enemies &&
         runA.world.shrines === runB.world.shrines &&
         runA.world.pickups === runB.world.pickups
-        ? 'enemies, shrines and pickups identical'
+        ? 'roster, shrines and fixed pickups identical'
         : 'layout differed between runs',
       'identical',
       runA.world.enemies === runB.world.enemies &&

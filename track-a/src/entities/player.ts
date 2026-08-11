@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type {
   Damageable,
+  Enemy,
   GameContext,
   HitInfo,
   Level,
@@ -21,12 +22,21 @@ import type {
   Rng,
 } from '../core/types';
 import type { AttackFrames, WeaponId } from '../core/constants';
+import type { TongueTarget } from './tongue';
+import {
+  MOUTH_HEIGHT,
+  advanceReach,
+  createTongueView,
+  pickTongueTarget,
+  resolveTongue,
+} from './tongue';
 import {
   ACCEL_TIME,
   COMBO_WINDOW_FROM,
   DECEL_TIME,
   KNOCKBACK_PLAYER,
   LOCKON_DROP_RANGE,
+  LUNGE_SLASH,
   LOCKON_CONE,
   LOCKON_RANGE,
   MAGNETIZE_LUNGE,
@@ -52,6 +62,7 @@ import {
   STARTING_WEAPON,
   WEAPONS,
   TICK_DT,
+  TONGUE_PULL_SELF_SPEED,
   TRAUMA_HIT,
   TRAUMA_PLAYER_HURT,
   TURN_RATE,
@@ -71,6 +82,12 @@ const BOB_AMPLITUDE = 0.035; // u
 const STEP_SMOOTH_RATE = 22.0;
 /** Impacts spark at the frog's chest, not at its feet. */
 const FX_HEIGHT = 0.45;
+/** A carried body rides this far in front of the frog. */
+const CARRY_FORWARD = 0.62;
+/** Close enough to an anchor to call the haul finished. */
+const TONGUE_ARRIVAL = 0.55;
+/** Escape hatch: a pull that cannot converge must never strand the frog. */
+const TONGUE_PULL_TIMEOUT = 1.6;
 
 // -------------------------------------------------------------- solver slack
 
@@ -267,6 +284,22 @@ export function createPlayer(
    * something you can actually aim.
    */
   let lockTarget: Damageable | null = null;
+
+  // ---------------------------------------------------------------- tongue
+  const tongueView = createTongueView(scene);
+  const mouth = new THREE.Vector3();
+  const tongueTip = new THREE.Vector3();
+  const anchor = new THREE.Vector3();
+  const throwDir = new THREE.Vector3();
+  let tongueTarget: TongueTarget | null = null;
+  let tongueReach = 0;
+  let tongueExtending = false;
+  let tongueResolved = false;
+  let carrying: Enemy | null = null;
+  /** Set while being hauled in: an attack now becomes the arrival slash. */
+  let lungeQueued = false;
+  /** A one-off frame table that outranks the equipped weapon's, for the slash. */
+  let overrideSwing: AttackFrames | null = null;
   let lungeLeft = 0;
   let lungeSpeed = 0;
   let knockSpeed = 0;
@@ -294,7 +327,16 @@ export function createPlayer(
 
   /** Frame data for the swing in flight; the last entry is the finisher. */
   const swing = (): AttackFrames =>
-    swings[Math.min(comboIndex, swings.length - 1)];
+    overrideSwing ?? swings[Math.min(comboIndex, swings.length - 1)];
+
+  /** Where the tongue leaves from, and where a carried body rides. */
+  function mouthAt(out: THREE.Vector3): THREE.Vector3 {
+    return out.set(
+      controller.position.x + Math.sin(facing) * 0.3,
+      controller.position.y + MOUTH_HEIGHT,
+      controller.position.z + Math.cos(facing) * 0.3,
+    );
+  }
 
   const inRollIframes = (): boolean =>
     state === 'roll' &&
@@ -480,6 +522,46 @@ export function createPlayer(
     lungeSpeed = lungeLeft / (frames.windup + frames.active);
   }
 
+  function enterTongue(ctx: GameContext): void {
+    state = 'tongue';
+    stateTime = 0;
+    freshEntry = true;
+    speed = 0;
+    tongueReach = 0;
+    tongueExtending = true;
+    tongueResolved = false;
+    lungeQueued = false;
+    mouthAt(mouth);
+    tongueTarget = pickTongueTarget(ctx, mouth, facing, ctx.input.isDown('tongue'));
+    // Commit to the direction on the frame it is thrown, so the rope never
+    // bends round behind the frog while it is out.
+    const dx = tongueTarget.position.x - controller.position.x;
+    const dz = tongueTarget.position.z - controller.position.z;
+    if (Math.abs(dx) + Math.abs(dz) > TOUCHING) facing = Math.atan2(dx, dz);
+  }
+
+  function enterTonguePull(): void {
+    state = 'tonguePull';
+    stateTime = 0;
+    freshEntry = true;
+    speed = 0;
+    lungeQueued = false;
+  }
+
+  /** Spit or hurl whatever is in the frog's mouth. */
+  function releaseCarried(ctx: GameContext, thrown: boolean): void {
+    const held = carrying;
+    if (held === null) return;
+    carrying = null;
+    if (!thrown) {
+      held.release(null, ctx);
+      return;
+    }
+    throwDir.set(Math.sin(facing), 0, Math.cos(facing));
+    held.release(throwDir, ctx);
+    ctx.addTrauma(TRAUMA_HIT * 0.5);
+  }
+
   function enterHitstun(): void {
     state = 'hitstun';
     stateTime = 0;
@@ -531,9 +613,28 @@ export function createPlayer(
     }
 
     if (state === 'idle' || state === 'move') {
+      // With something in your mouth the verbs change meaning: attack hurls it,
+      // the tongue button just spits it out.
+      if (carrying !== null) {
+        if (ctx.input.consume('attack')) {
+          releaseCarried(ctx, true);
+          return;
+        }
+        if (ctx.input.consume('tongue')) {
+          releaseCarried(ctx, false);
+          return;
+        }
+      } else if (ctx.input.consume('tongue')) {
+        enterTongue(ctx);
+        return;
+      }
       if (ctx.input.consume('attack')) enterAttack(ctx, 0, magnitude);
       return;
     }
+
+    // Hauling in: an attack now is the arrival slash, claimed early and spent
+    // on landing so the input is never eaten by the flight.
+    if (state === 'tonguePull' && ctx.input.consume('attack')) lungeQueued = true;
 
     if (
       state === 'attack' &&
@@ -600,9 +701,76 @@ export function createPlayer(
         break;
       }
 
+      case 'tongue': {
+        mouthAt(mouth);
+        const target = tongueTarget;
+        const aim = target === null ? mouth : target.position;
+        const span = Math.hypot(aim.x - mouth.x, aim.z - mouth.z);
+
+        tongueReach = advanceReach(tongueReach, span, tongueExtending, dt);
+
+        if (tongueExtending && !tongueResolved && tongueReach >= span - TOUCHING) {
+          tongueResolved = true;
+          tongueExtending = false;
+          if (target !== null) {
+            const resolution = resolveTongue(target, mouth, ctx);
+            if (resolution.outcome !== 'none') {
+              ctx.spawnFx('tongueHit', aim.clone());
+            }
+            if (resolution.outcome === 'held') {
+              carrying = resolution.held;
+            } else if (resolution.outcome === 'anchor' && resolution.anchor !== null) {
+              anchor.copy(resolution.anchor);
+              enterTonguePull();
+              break;
+            }
+          }
+        }
+
+        // Nothing was caught and the tongue is all the way out: the whiff has
+        // to be seen, so the recovery is served on the way back in.
+        if (!tongueExtending && tongueReach <= TOUCHING) {
+          if (magnitude > 0) enterMove();
+          else enterIdle();
+        }
+        break;
+      }
+
+      case 'tonguePull': {
+        const dx = anchor.x - controller.position.x;
+        const dz = anchor.z - controller.position.z;
+        const gap = Math.hypot(dx, dz);
+        // Arrive when the frog is as close as its own body allows.
+        if (gap <= PLAYER_RADIUS + TONGUE_ARRIVAL || stateTime > TONGUE_PULL_TIMEOUT) {
+          tongueReach = 0;
+          if (lungeQueued) {
+            // The flight WAS the windup. Spend it as a real swing so the blow
+            // goes through exactly the same strike path as any other.
+            overrideSwing = LUNGE_SLASH;
+            ctx.spawnFx('lungeSlash', controller.position.clone());
+            ctx.addTrauma(TRAUMA_HIT);
+            enterAttack(ctx, 0, magnitude);
+          } else if (magnitude > 0) enterMove();
+          else enterIdle();
+          break;
+        }
+        const travel = Math.min(gap, TONGUE_PULL_SELF_SPEED * dt);
+        velocity.set((dx / gap) * (travel / dt), 0, (dz / gap) * (travel / dt));
+        facing = Math.atan2(dx, dz);
+        mouthAt(mouth);
+        tongueReach = gap;
+        break;
+      }
+
       case 'attack': {
         if (stateTime >= attackLength(swing()) - TIME_EPS) {
-          if (comboQueued && comboIndex + 1 < swings.length) {
+          if (overrideSwing !== null) {
+            // The arrival slash is a single blow; it never chains.
+            overrideSwing = null;
+            if (magnitude > 0) enterMove();
+            else enterIdle();
+            groundMovement(dt, magnitude);
+          } else if (comboQueued && comboIndex + 1 < swings.length) {
             enterAttack(ctx, comboIndex + 1, magnitude);
           } else {
             if (magnitude > 0) enterMove();
@@ -649,6 +817,38 @@ export function createPlayer(
         break;
       }
     }
+  }
+
+  /** Draw the rope, and carry whatever is in the frog's mouth along with it. */
+  function presentTongue(): void {
+    const out = state === 'tongue' || state === 'tonguePull';
+    mouthAt(mouth);
+
+    if (carrying !== null) {
+      // A held body rides just past the mouth, so the frog visibly has it.
+      tongueTip.set(
+        controller.position.x + Math.sin(facing) * CARRY_FORWARD,
+        controller.position.y,
+        controller.position.z + Math.cos(facing) * CARRY_FORWARD,
+      );
+      carrying.carryTo(tongueTip);
+      tongueView.aim(mouth, tongueTip.clone().setY(mouth.y));
+      tongueView.setVisible(true);
+      return;
+    }
+
+    if (!out || tongueReach <= TOUCHING) {
+      tongueView.setVisible(false);
+      return;
+    }
+
+    tongueTip.set(
+      mouth.x + Math.sin(facing) * tongueReach,
+      mouth.y,
+      mouth.z + Math.cos(facing) * tongueReach,
+    );
+    tongueView.aim(mouth, tongueTip);
+    tongueView.setVisible(true);
   }
 
   /** Everything the simulation does not care about: bob, squash, step smoothing. */
@@ -758,6 +958,12 @@ export function createPlayer(
     get lockedOn(): boolean {
       return lockTarget !== null;
     },
+    get carrying(): Enemy | null {
+      return carrying;
+    },
+    get tongueReach(): number {
+      return tongueReach;
+    },
 
     equip(next: WeaponId): void {
       weapon = next;
@@ -780,6 +986,11 @@ export function createPlayer(
       velocity.set(0, 0, 0);
       swung.clear();
       lockTarget = null;
+      carrying = null;
+      tongueReach = 0;
+      tongueTarget = null;
+      overrideSwing = null;
+      tongueView.setVisible(false);
       // A beat of grace, so a respawn cannot hand the frog straight back into
       // a blow it never had the frames to read.
       invulnUntil = now + PLAYER_IFRAMES_AFTER_HIT;
@@ -806,6 +1017,7 @@ export function createPlayer(
       controller.move(displacement, dt);
 
       present(ctx, dt);
+      presentTongue();
       // Anything entered during this frame has now run a frame of its own.
       freshEntry = false;
     },

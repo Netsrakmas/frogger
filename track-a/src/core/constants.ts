@@ -200,6 +200,36 @@ export const TONGUE_YANK_DISTANCE = 1.5; // u
 export const TONGUE_YANK_STAGGER = f(40);
 /** Elastic overshoot on extend, then settle. */
 export const TONGUE_OVERSHOOT = 0.05;
+/** A held body, thrown. It hurts whatever it lands on, and itself. */
+export const TONGUE_THROW_SPEED = 14.0; // u/s
+export const TONGUE_THROW_DAMAGE = 2;
+export const TONGUE_THROW_RANGE = 5.0; // u before it tumbles to a stop
+/**
+ * The arrival slash: attacking while being hauled in converts the momentum
+ * into a blow. The most-praised interaction in this genre (Death's Door), so
+ * it is a first-class window rather than a coincidence of timing.
+ */
+export const LUNGE_SLASH_WINDOW = f(12);
+export const LUNGE_SLASH_DAMAGE = 3;
+export const LUNGE_SLASH_ARC = Math.PI * 0.7;
+export const LUNGE_SLASH_REACH = 2.6;
+
+/**
+ * The blow itself: almost no windup, because the wind-up was the flight. It
+ * exists as frame data so it obeys exactly the same strike path as a sword
+ * swing rather than being a special case in the player.
+ */
+export const LUNGE_SLASH: AttackFrames = {
+  windup: f(2),
+  active: f(6),
+  recovery: f(14),
+  rollCancelFrom: 0,
+  damage: LUNGE_SLASH_DAMAGE,
+  hitstop: HITSTOP_HEAVY,
+  knockback: 3.4,
+  arc: LUNGE_SLASH_ARC,
+  reach: LUNGE_SLASH_REACH,
+};
 
 // ------------------------------------------------------------------ lock-on
 export const LOCKON_CONE = (60 * Math.PI) / 180; // half-cone from facing

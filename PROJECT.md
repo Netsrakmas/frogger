@@ -1,6 +1,6 @@
 # Frogger — a Tunic-like with a frog
 
-**Phase:** 2 — build (Track A, milestones A1-A2 done; next is A3 tongue)
+**Phase:** 2 — build (Track A, milestones A1-A3 done; next is A4 Lilypond Downs)
 **Stack:** dual-track: (A) Vite + Three.js + TS (primary), (B) Godot 4 web export (comparison)
 **Repo:** github.com/netsrakmas/frogger
 **Live:** not deployed
@@ -12,7 +12,7 @@ A triple-A-polish demo of a Tunic-like isometric action-adventure starring a fro
 ## Phase log
 - 0 idee — skipped by explicit user decision (verdict: build). User committed to building via gauntlet prompting.
 - 1 plan — done. RESEARCH.md (3 angles: spec craft, Tunic visual grammar, architecture + feel numbers) and PROMPT.md (dual-track master spec, milestones A1–A10, B1–B5, C1) written. Spec-only per user request; build not started.
-- 2 build — in progress. **A1, A2 done** (see milestone log). Next: A3 tongue.
+- 2 build — in progress. **A1, A2, A3 done** (see milestone log). Next: A4 world.
 - 3 art — not started
 - 4 test — not started
 - 5 ship — not started
@@ -63,6 +63,23 @@ A1's `gate.mjs` **25/25** and `feel.mjs` **51/51** still green.
   measuring, `probeHit` used as if it damaged enemies (it damages the player),
   and counting *rendered frames* to wait for a *simulation* event - above 60 fps
   several frames can pass with no sim step at all.
+
+**A3 — the tongue — DONE 2026-08-11.** Gate: `tests/a3.mjs` **16/16**, one
+scripted test per row of section 4's mass-rule table. A1/A2 gates still green.
+- Row 1 (items): vacuumed from 5 u, well past the 1.8 u walk-over magnet.
+- Row 2 (light): pulled in, carried 0.62 u in front of the frog, and throwable -
+  a thrown Sporeling took the Beetle Guard from 5 hp to 3 and died doing it, so
+  both parties take the damage the spec asks for.
+- Row 3 (medium): not liftable. Dragged 3.84 u -> 2.27 u, staggered, and **spun
+  from 0 deg to 177 deg off its facing** - the shield ends up pointing away, and
+  the follow-up blow then lands. This is the Beetle's designed opener.
+- Row 4 (anchored): the frog travels instead (4.80 u), and attacking mid-haul
+  spends the momentum as the arrival slash (3 damage vs the sword's 2).
+- Grapple posts placed as a chain across the pond, so the tongue is traversal
+  as well as combat.
+- Harness bug worth recording: the test drove the stick in SCREEN space without
+  rotating by the camera's 45 deg yaw, which pointed the frog 45 deg off and made
+  three rows silently measure a whiff. The fix is in `stickFor()`.
 
 ## Open questions
 - Which of the two stacks wins after comparison (decided in/after phase 2).

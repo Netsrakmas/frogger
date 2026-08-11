@@ -61,6 +61,18 @@ export function createTestApi(game: Game): TestApi {
     }));
   }
 
+  function posts() {
+    return ctx.grapplePosts.map((post) => ({
+      id: post.id,
+      claimed: false,
+      pos: [post.position.x, post.position.y, post.position.z] as [
+        number,
+        number,
+        number,
+      ],
+    }));
+  }
+
   function pickupList() {
     return ctx.pickups.map((pickup) => ({
       kind: pickup.kind,
@@ -99,6 +111,8 @@ export function createTestApi(game: Game): TestApi {
       enemiesAlive,
       weapon: player.weapon,
       lockedOn: player.lockedOn,
+      tongueReach: player.tongueReach,
+      carrying: player.carrying === null ? null : player.carrying.kind,
       coins: ctx.progress.coins,
       pickups: ctx.pickups.length,
       ghosts: ctx.pickups.filter((pickup) => pickup.kind === 'ghost').length,
@@ -203,6 +217,7 @@ export function createTestApi(game: Game): TestApi {
 
     enemies,
     shrines,
+    posts,
     pickupList,
   };
 }

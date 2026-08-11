@@ -23,7 +23,9 @@ import type {
   GameContext,
   HitInfo,
   Level,
+  MassClass,
   Rng,
+  TongueOutcome,
 } from '../core/types';
 import {
   COIN_DROP_SPORELING,
@@ -37,6 +39,10 @@ import {
   SQUASH_IMPACT,
   SQUASH_RECOVER,
   TICK_DT,
+  TONGUE_THROW_DAMAGE,
+  TONGUE_THROW_RANGE,
+  TONGUE_THROW_SPEED,
+  TRAUMA_HIT,
   TURN_RATE,
 } from '../core/constants';
 import { makeOutline, material } from '../render/materials';
@@ -335,6 +341,12 @@ export function createSporeling(
   let knockSpeed = 0;
   let hurtFlash = 0;
   let ctxRef: GameContext | null = null;
+  /** In the frog's mouth: the tongue owns where it is until it is let go. */
+  let held = false;
+  let thrownSpeed = 0;
+  let thrownLeft = 0;
+  const thrownDir = new THREE.Vector3();
+  const struckByThrow = new Set<Damageable>();
 
   root.position.copy(pos);
 
@@ -460,6 +472,9 @@ export function createSporeling(
 
   function think(ctx: GameContext, dt: number): void {
     travel.set(0, 0, 0);
+    // Carried: the frog owns where it is, so no behaviour runs at all.
+    if (held) return;
+    flyOn(ctx, dt);
     const player = ctx.player;
     const dx = player.position.x - pos.x;
     const dz = player.position.z - pos.z;
@@ -582,6 +597,79 @@ export function createSporeling(
     }
   }
 
+  /**
+   * Light enough to lift, so the top row of the mass rule applies: it comes to
+   * the frog and ends up in its mouth.
+   */
+  function onTongue(_from: THREE.Vector3, _ctx: GameContext): TongueOutcome {
+    if (state === 'dead' || held) return 'none';
+    held = true;
+    thrownSpeed = 0;
+    enterStagger();
+    return 'held';
+  }
+
+  function carryTo(position: THREE.Vector3): void {
+    controller.teleport(position);
+  }
+
+  /** Let go. Thrown, it becomes a projectile that hurts what it lands on. */
+  function release(dir: THREE.Vector3 | null, _ctx: GameContext): void {
+    if (!held) return;
+    held = false;
+    struckByThrow.clear();
+    if (dir === null) {
+      enterStagger();
+      return;
+    }
+    thrownDir.set(dir.x, 0, dir.z);
+    if (thrownDir.lengthSq() < EPS) thrownDir.set(Math.sin(facing), 0, Math.cos(facing));
+    thrownDir.normalize();
+    thrownSpeed = TONGUE_THROW_SPEED;
+    thrownLeft = TONGUE_THROW_RANGE;
+    enterStagger();
+  }
+
+  /** A body in flight: it hurts what it hits, and the landing hurts it too. */
+  function flyOn(ctx: GameContext, dt: number): void {
+    if (thrownSpeed <= 0) return;
+    const travelled = Math.min(thrownLeft, thrownSpeed * dt);
+    thrownLeft -= travelled;
+    travel.x += thrownDir.x * travelled;
+    travel.z += thrownDir.z * travelled;
+
+    for (const other of ctx.enemies) {
+      if (other.root === root || !other.alive || struckByThrow.has(other)) continue;
+      const dx = other.position.x - pos.x;
+      const dz = other.position.z - pos.z;
+      if (Math.hypot(dx, dz) > BODY_RADIUS + other.hurtRadius) continue;
+      struckByThrow.add(other);
+      hitDir.set(thrownDir.x, 0, thrownDir.z);
+      other.takeHit({
+        damage: TONGUE_THROW_DAMAGE,
+        knockback: KNOCKBACK_SMALL_ENEMY,
+        direction: hitDir.clone(),
+        hitstop: HITSTOP_LIGHT,
+        source: 'player',
+      });
+      ctx.requestHitstop(HITSTOP_LIGHT);
+      ctx.addTrauma(TRAUMA_HIT);
+      // The thrown body takes the same blow it delivers.
+      thrownSpeed = 0;
+      thrownLeft = 0;
+      takeHit({
+        damage: TONGUE_THROW_DAMAGE,
+        knockback: 0,
+        direction: hitDir.clone().negate(),
+        hitstop: 0,
+        source: 'player',
+      });
+      return;
+    }
+
+    if (thrownLeft <= 0) thrownSpeed = 0;
+  }
+
   function takeHit(hit: HitInfo): boolean {
     if (state === 'dead') return false;
 
@@ -617,6 +705,15 @@ export function createSporeling(
     get facing(): number {
       return facing;
     },
+    get mass(): MassClass {
+      return SPORELING.mass;
+    },
+    get held(): boolean {
+      return held;
+    },
+    onTongue,
+    carryTo,
+    release,
     get hurtRadius(): number {
       return BODY_RADIUS;
     },

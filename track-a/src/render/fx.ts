@@ -100,6 +100,53 @@ interface Emitter {
 }
 
 const EMITTERS: Record<FxKind, Emitter> = {
+  // The tongue getting a grip: a wet, tight splat at the point of contact.
+  tongueHit: {
+    group: 'dustPale',
+    count: 6,
+    ring: false,
+    radius: 0.06,
+    height: 0,
+    floorDrop: 0.8,
+    speedMin: 1.6,
+    speedMax: 3.2,
+    riseMin: 0.4,
+    riseMax: 1.2,
+    sizeMin: 0.08,
+    sizeMax: 0.14,
+    lifeMin: 0.14,
+    lifeMax: 0.26,
+    growth: 0.6,
+    pop: 0.08,
+    drag: 8.0,
+    gravity: -3.0,
+    spread: 1.2,
+    bias: 0,
+  },
+  // Arrival slash: a wide bright sweep, bigger than any ordinary hit spark,
+  // because this is the move the whole mechanic is built around.
+  lungeSlash: {
+    group: 'spark',
+    count: 16,
+    ring: true,
+    radius: 0.9,
+    height: 0.35,
+    floorDrop: 1.2,
+    speedMin: 3.0,
+    speedMax: 5.5,
+    riseMin: 0.2,
+    riseMax: 1.0,
+    sizeMin: 0.11,
+    sizeMax: 0.2,
+    lifeMin: 0.2,
+    lifeMax: 0.36,
+    growth: 0.55,
+    pop: 0.05,
+    drag: 6.0,
+    gravity: -2.0,
+    spread: 0,
+    bias: 0.5,
+  },
   // A blow turned by the Beetle Guard's shield. Tight, hard and bounced back
   // along the incoming blow, so it reads as "stopped" rather than "landed" -
   // the player must be able to tell a block from a hit without the health bar.

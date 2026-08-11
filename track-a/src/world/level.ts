@@ -182,6 +182,16 @@ const SHRINE_SPOTS: readonly { id: string; x: number; z: number }[] = [
   { id: 'downs', x: 1.5, z: 12.5 },
 ];
 const SWORD_SPOT = { x: 8.5, z: -1.0 };
+/**
+ * A3's grapple chain. Two posts step out across the pond and one waits on the
+ * far rim, so the only dry way over is tongue-post-tongue - the moment the verb
+ * stops being a combat trick and becomes how you get somewhere.
+ */
+const GRAPPLE_SPOTS: readonly { id: string; x: number; z: number }[] = [
+  { id: 'shore', x: 7.6, z: -4.0 },
+  { id: 'stone', x: 11.5, z: -5.4 },
+  { id: 'far', x: 15.6, z: -6.6 },
+];
 /** Spawns sit a hair proud of the ground so the first ground-snap resolves down. */
 const SPAWN_CLEARANCE = 0.05;
 
@@ -668,6 +678,14 @@ export function createLevel(rng: Rng): Level {
   for (const spot of SHRINE_SPOTS) {
     spawns.push({
       type: `shrine:${spot.id}`,
+      position: new THREE.Vector3(spot.x, height(spot.x, spot.z), spot.z),
+      yaw: 0,
+    });
+  }
+
+  for (const spot of GRAPPLE_SPOTS) {
+    spawns.push({
+      type: `grapple:${spot.id}`,
       position: new THREE.Vector3(spot.x, height(spot.x, spot.z), spot.z),
       yaw: 0,
     });

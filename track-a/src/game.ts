@@ -25,6 +25,7 @@ import type {
   Loop,
   Pickup,
   Progress,
+  GrapplePost,
   Rng,
   Shrine,
 } from './core/types';
@@ -48,6 +49,7 @@ import { createSporeling } from './entities/sporeling';
 import { createBeetleGuard } from './entities/beetle';
 import { createCoin, createGhost, createWeaponPickup } from './entities/pickup';
 import { createShrine } from './world/shrine';
+import { createGrapplePost } from './world/grapple';
 import { createHud } from './ui/hud';
 
 export interface Game {
@@ -130,6 +132,7 @@ export function createGame(
 
   const pickups: Pickup[] = [];
   const shrines: Shrine[] = [];
+  const grapplePosts: GrapplePost[] = [];
   /** The ghost currently owed to the player. Dying again abandons it for good. */
   let ghost: Pickup | null = null;
   let coins = 0;
@@ -138,6 +141,10 @@ export function createGame(
     if (spawn.type.startsWith('shrine:')) {
       shrines.push(
         createShrine(scene, spawn.type.slice('shrine:'.length), spawn.position),
+      );
+    } else if (spawn.type.startsWith('grapple:')) {
+      grapplePosts.push(
+        createGrapplePost(scene, spawn.type.slice('grapple:'.length), spawn.position),
       );
     } else if (spawn.type === 'sword') {
       pickups.push(createWeaponPickup(scene, spawn.position, 'sword'));
@@ -177,6 +184,7 @@ export function createGame(
     enemies,
     pickups,
     shrines,
+    grapplePosts,
     hud,
     progress,
 
@@ -281,6 +289,7 @@ export function createGame(
 
   function tickShrines(dt: number): void {
     for (const shrine of shrines) shrine.update(dt, ctx);
+    for (const post of grapplePosts) post.update(dt, ctx);
     if (!player.alive || !input.consume('interact')) return;
     for (const shrine of shrines) {
       if (!shrine.inRange(player.position)) continue;
@@ -454,6 +463,8 @@ export function createGame(
       ghost = null;
       for (const shrine of shrines) shrine.dispose();
       shrines.length = 0;
+      for (const post of grapplePosts) post.dispose();
+      grapplePosts.length = 0;
       player.dispose();
 
       level.dispose();

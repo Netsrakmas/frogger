@@ -83,6 +83,8 @@ export function createCoin(
   let age = 0;
   let collected = false;
   let settled = false;
+  /** The tongue caught it: come in from wherever, no magnet range. */
+  let lured = false;
 
   mesh.position.copy(pos);
 
@@ -90,6 +92,10 @@ export function createCoin(
     root: mesh,
     kind: 'coin' as PickupKind,
     value: 1,
+    lure(): void {
+      lured = true;
+      settled = true;
+    },
     get alive(): boolean {
       return !collected;
     },
@@ -110,8 +116,9 @@ export function createCoin(
         }
       }
 
-      // Inert for a beat, so a kill's spray is visible before it is absorbed.
-      if (age >= COIN_SETTLE && ctx.player.alive) {
+      // Inert for a beat, so a kill's spray is visible before it is absorbed -
+      // unless a tongue asked for it, which overrides the wait and the range.
+      if ((lured || age >= COIN_SETTLE) && ctx.player.alive) {
         const dx = ctx.player.position.x - pos.x;
         const dz = ctx.player.position.z - pos.z;
         const distance = Math.hypot(dx, dz);
@@ -122,8 +129,8 @@ export function createCoin(
           mesh.visible = false;
           return;
         }
-        if (distance <= COIN_MAGNET_RANGE && distance > EPS) {
-          const pull = Math.min(distance, COIN_MAGNET_SPEED * dt);
+        if ((lured || distance <= COIN_MAGNET_RANGE) && distance > EPS) {
+          const pull = Math.min(distance, COIN_MAGNET_SPEED * (lured ? 2.2 : 1) * dt);
           pos.x += (dx / distance) * pull;
           pos.z += (dz / distance) * pull;
         }
@@ -171,11 +178,15 @@ export function createGhost(
   const pos = position.clone();
   let age = 0;
   let collected = false;
+  let lured = false;
 
   return {
     root: mesh,
     kind: 'ghost' as PickupKind,
     value,
+    lure(): void {
+      lured = true;
+    },
     get alive(): boolean {
       return !collected;
     },
@@ -190,7 +201,15 @@ export function createGhost(
       if (ctx.player.alive) {
         const dx = ctx.player.position.x - pos.x;
         const dz = ctx.player.position.z - pos.z;
-        if (Math.hypot(dx, dz) <= GHOST_RADIUS + ctx.player.hurtRadius) {
+        const distance = Math.hypot(dx, dz);
+        // A tongue can reel your own purse back to you across the gap that
+        // killed you, which is exactly the fantasy the mechanic should sell.
+        if (lured && distance > EPS) {
+          const pull = Math.min(distance, COIN_MAGNET_SPEED * 2.2 * dt);
+          pos.x += (dx / distance) * pull;
+          pos.z += (dz / distance) * pull;
+        }
+        if (distance <= GHOST_RADIUS + ctx.player.hurtRadius) {
           collected = true;
           ctx.progress.add(value);
           ctx.hud.toast('coins', value);
@@ -244,11 +263,15 @@ export function createWeaponPickup(
   let age = 0;
   let collected = false;
   let flourish = 0;
+  let lured = false;
 
   return {
     root: mesh,
     kind: 'weapon' as PickupKind,
     value: 0,
+    lure(): void {
+      lured = true;
+    },
     get alive(): boolean {
       return !collected;
     },
@@ -263,7 +286,13 @@ export function createWeaponPickup(
       if (ctx.player.alive) {
         const dx = ctx.player.position.x - pos.x;
         const dz = ctx.player.position.z - pos.z;
-        if (Math.hypot(dx, dz) <= COIN_PICKUP_RANGE + ctx.player.hurtRadius) {
+        const distance = Math.hypot(dx, dz);
+        if (lured && distance > EPS) {
+          const pull = Math.min(distance, COIN_MAGNET_SPEED * 2.2 * dt);
+          pos.x += (dx / distance) * pull;
+          pos.z += (dz / distance) * pull;
+        }
+        if (distance <= COIN_PICKUP_RANGE + ctx.player.hurtRadius) {
           collected = true;
           ctx.player.equip(weapon);
           ctx.hud.toast('weapon');

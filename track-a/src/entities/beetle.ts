@@ -27,7 +27,9 @@ import type {
   GameContext,
   HitInfo,
   Level,
+  MassClass,
   Rng,
+  TongueOutcome,
 } from '../core/types';
 import {
   BEETLE_BLOCK_HITSTOP,
@@ -43,6 +45,8 @@ import {
   SQUASH_IMPACT,
   SQUASH_RECOVER,
   TICK_DT,
+  TONGUE_YANK_DISTANCE,
+  TONGUE_YANK_STAGGER,
 } from '../core/constants';
 import { makeOutline, material } from '../render/materials';
 import { createController } from '../physics/controller';
@@ -265,6 +269,9 @@ export function createBeetleGuard(
   let hurtFlash = 0;
   let guardFlash = 0;
   let ctxRef: GameContext | null = null;
+  /** Set by the tongue: how long this stagger lasts and how far it drags. */
+  let staggerFor = ENEMY_STAGGER;
+  let yankLeft = 0;
 
   root.position.copy(pos);
 
@@ -310,11 +317,47 @@ export function createBeetleGuard(
     stateTime = 0;
   }
 
-  function enterStagger(): void {
+  function enterStagger(duration = ENEMY_STAGGER): void {
     state = 'stagger';
     stateTime = 0;
+    staggerFor = duration;
     squash = SQUASH_IMPACT;
     knockSpeed = KNOCKBACK_SPEED;
+  }
+
+  /**
+   * The medium row of the mass rule. Too heavy to lift, but a tongue round the
+   * leg will drag it off balance and turn it - and a guard facing the wrong way
+   * is a guard with no shield. This is the Beetle's designed opener.
+   */
+  function onTongue(from: THREE.Vector3, ctx: GameContext): TongueOutcome {
+    if (state === 'dead') return 'none';
+
+    const dx = from.x - pos.x;
+    const dz = from.z - pos.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > EPS) {
+      knockDir.set(dx / distance, 0, dz / distance);
+      // Spun so its back is to the frog: the shield now points away.
+      facing = Math.atan2(-dx, -dz);
+    }
+    yankLeft = TONGUE_YANK_DISTANCE;
+    enterStagger(TONGUE_YANK_STAGGER);
+    ctx.spawnFx(
+      'tongueHit',
+      new THREE.Vector3(pos.x, pos.y + FX_HEIGHT, pos.z),
+      knockDir.clone(),
+    );
+    return 'yanked';
+  }
+
+  /** Never carried - it is the wrong weight class for the frog's mouth. */
+  function carryTo(_position: THREE.Vector3): void {
+    /* medium mass is never held */
+  }
+
+  function release(_dir: THREE.Vector3 | null, _ctx: GameContext): void {
+    /* medium mass is never held */
   }
 
   function die(): void {
@@ -434,7 +477,14 @@ export function createBeetleGuard(
           travel.z += knockDir.z * push;
           knockSpeed = Math.max(0, knockSpeed - KNOCKBACK_SPEED * (dt / ENEMY_STAGGER));
         }
-        if (stateTime >= ENEMY_STAGGER - TIME_EPS) enterAggro();
+        // A yank drags it toward the frog on top of the ordinary knockback.
+        if (yankLeft > 0) {
+          const drag = Math.min(yankLeft, (TONGUE_YANK_DISTANCE / TONGUE_YANK_STAGGER) * dt * 2);
+          yankLeft -= drag;
+          travel.x += knockDir.x * drag;
+          travel.z += knockDir.z * drag;
+        }
+        if (stateTime >= staggerFor - TIME_EPS) enterAggro();
         break;
       }
 
@@ -538,6 +588,15 @@ export function createBeetleGuard(
     get facing(): number {
       return facing;
     },
+    get mass(): MassClass {
+      return BEETLE_GUARD.mass;
+    },
+    get held(): boolean {
+      return false;
+    },
+    onTongue,
+    carryTo,
+    release,
     get hurtRadius(): number {
       return BODY_RADIUS;
     },

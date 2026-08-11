@@ -148,7 +148,11 @@ export type PlayerStateName =
   | 'roll'
   | 'attack'
   | 'hitstun'
-  | 'dead';
+  | 'dead'
+  /** Tongue out: extending, latched, or reeling back in. */
+  | 'tongue'
+  /** Latched onto something immovable and being hauled toward it. */
+  | 'tonguePull';
 
 export interface Player extends Entity, Damageable {
   readonly state: PlayerStateName;
@@ -165,6 +169,10 @@ export interface Player extends Entity, Damageable {
   /** The enemy a hard lock is held on, or null when free-aiming. */
   readonly lockTarget: Damageable | null;
   readonly lockedOn: boolean;
+  /** The enemy currently in the frog's mouth, if any. */
+  readonly carrying: Enemy | null;
+  /** 0 while the tongue is stowed, else how far out it is in world units. */
+  readonly tongueReach: number;
   equip(weapon: WeaponId): void;
   /** Restore to full and stand up at `at`, clearing every in-flight action. */
   respawn(at: THREE.Vector3): void;
@@ -179,12 +187,43 @@ export type EnemyStateName =
   | 'stagger'
   | 'dead';
 
+/** Drives the tongue's mass rule (PROMPT.md section 4). */
+export type MassClass = 'light' | 'medium' | 'heavy';
+
+/**
+ * What the tongue did when it arrived:
+ *   held   - lighter than the frog, so it comes to you and you carry it
+ *   yanked - too heavy to lift, but it can be dragged off balance
+ *   anchor - heavier than you are, so YOU go to IT
+ *   none   - nothing happened (already dying, already held)
+ */
+export type TongueOutcome = 'held' | 'yanked' | 'anchor' | 'none';
+
 export interface Enemy extends Entity, Damageable {
   readonly state: EnemyStateName;
   readonly hp: number;
   readonly kind: string;
   /** Yaw in radians. Which way a guard's shield points is gameplay, not decor. */
   readonly facing: number;
+  readonly mass: MassClass;
+  readonly held: boolean;
+  /** The tongue reached it; the enemy applies its own mass rule and reports. */
+  onTongue(from: THREE.Vector3, ctx: GameContext): TongueOutcome;
+  /** While held, the frog owns where it is. */
+  carryTo(position: THREE.Vector3): void;
+  /** Let go. With a direction it is thrown, and a thrown body hurts what it hits. */
+  release(dir: THREE.Vector3 | null, ctx: GameContext): void;
+}
+
+/**
+ * A fixed point the tongue can haul the frog to. Section 4: grapple posts chain
+ * across water gaps, and arriving with momentum feeds an attack.
+ */
+export interface GrapplePost extends Entity {
+  readonly id: string;
+  readonly position: THREE.Vector3;
+  /** Lights up while it is the tongue's current candidate. */
+  setHighlighted(active: boolean): void;
 }
 
 // ------------------------------------------------------------ world objects
@@ -196,6 +235,11 @@ export interface Pickup extends Entity {
   readonly position: THREE.Vector3;
   /** Coins carried: 1 for a loose coin, the whole purse for a ghost. */
   readonly value: number;
+  /**
+   * The tongue caught it: come to the frog from wherever you are, ignoring the
+   * usual magnet range. Section 4's top row - free delight, no balance cost.
+   */
+  lure(): void;
 }
 
 export interface Shrine extends Entity {
@@ -229,7 +273,11 @@ export type FxKind =
   /** A blow turned by the Beetle Guard's shield: sparks, no blood. */
   | 'guardSpark'
   | 'coinPop'
-  | 'shrineRest';
+  | 'shrineRest'
+  /** The tongue latching onto something solid. */
+  | 'tongueHit'
+  /** Arrival slash at the end of a grapple pull - the Death's Door move. */
+  | 'lungeSlash';
 
 // ------------------------------------------------------------------------ ui
 
@@ -271,6 +319,7 @@ export interface GameContext {
   /** Coins, ghosts and unclaimed weapons on the ground. A3's tongue reads it. */
   readonly pickups: Pickup[];
   readonly shrines: Shrine[];
+  readonly grapplePosts: GrapplePost[];
   readonly hud: Hud;
   readonly progress: Progress;
   addTrauma(amount: number): void;
@@ -300,6 +349,8 @@ export interface GameSample {
   enemiesAlive: number;
   weapon: WeaponId;
   lockedOn: boolean;
+  tongueReach: number;
+  carrying: string | null;
   coins: number;
   pickups: number;
   ghosts: number;
@@ -356,6 +407,7 @@ export interface TestApi {
   teleportPlayer(x: number, y: number, z: number): void;
   enemies(): EnemySnapshot[];
   shrines(): ShrineSnapshot[];
+  posts(): ShrineSnapshot[];
   pickupList(): PickupSnapshot[];
 }
 

@@ -310,7 +310,7 @@ Track A first to M4, then Track B starts — A's code is the reference for B's f
   magnetism, Sporeling + Beetle Guard FSMs w/ telegraphs, HP/damage, hitstop, trauma
   shake, knockback, squash, death/respawn + coin ghost, shrine rest loop.
   *Gate: feel gate full pass; scripted duel vs both enemies; determinism check.*
-- [ ] **A3 — Tongue.** All four mass-rule rows, grapple posts + chaining, held-throw,
+- [x] **A3 — Tongue.** All four mass-rule rows, grapple posts + chaining, held-throw,
   yank-stagger opens Beetle guard, arrival lunge-slash, crosshair aim mode, item
   vacuum. *Gate: scripted test per table row; the pull-attack must land ≥2 on the
   scorecard's "signature move" squint test.*
