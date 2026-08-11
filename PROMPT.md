@@ -301,7 +301,7 @@ One milestone per session. Tick the box only when the gate passes with evidence.
 Track A first to M4, then Track B starts — A's code is the reference for B's feel.
 
 ### Track A — Three.js (primary)
-- [ ] **A1 — Vertical slice greybox.** Vite+TS scaffold, fixed-step loop, seeded RNG,
+- [x] **A1 — Vertical slice greybox.** Vite+TS scaffold, fixed-step loop, seeded RNG,
   ortho camera rig w/ damped follow, BVH capsule controller on a greybox Lilypond
   (code-generated), move + roll with full §5 numbers, stamina bar, palette-correct
   flat materials, one Sporeling that dies to a placeholder attack. *Gate: playable

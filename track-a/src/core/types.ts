@@ -160,6 +160,8 @@ export interface Player extends Entity, Damageable {
   /** Yaw in radians. */
   readonly facing: number;
   readonly controller: CharacterController;
+  /** Restore to full and stand up at `at`, clearing every in-flight action. */
+  respawn(at: THREE.Vector3): void;
 }
 
 export type EnemyStateName =

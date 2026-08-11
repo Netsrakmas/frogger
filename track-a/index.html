@@ -7,6 +7,17 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>CROAK</title>
+    <!--
+      Inline, so the browser's automatic /favicon.ico request never happens.
+      Without it every load logs a 404 as a console error and fails section
+      10's zero-console gate on a plain page load. A data URI keeps rule 15's
+      "everything local" intact - there is nothing to fetch. Palette roles only:
+      dungeonDark ground, heroBody frog.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2322283F'/%3E%3Cellipse cx='16' cy='21' rx='10' ry='7.5' fill='%236FBF4B'/%3E%3Ccircle cx='10' cy='12' r='4.6' fill='%236FBF4B'/%3E%3Ccircle cx='22' cy='12' r='4.6' fill='%236FBF4B'/%3E%3Ccircle cx='10' cy='12' r='1.9' fill='%2322283F'/%3E%3Ccircle cx='22' cy='12' r='1.9' fill='%2322283F'/%3E%3C/svg%3E"
+    />
     <style>
       /* Palette roles only - PROMPT.md section 2. */
       :root {
@@ -30,11 +41,7 @@
         height: 100%;
         overflow: hidden;
         background: var(--dungeon-dark);
-        /* No default browser fonts in the build - section 9 rule 12. */
-        font-family: ui-rounded, 'Hiragino Maru Gothic ProN', 'Quicksand',
-          'Trebuchet MS', system-ui, sans-serif;
         color: var(--hero-belly);
-        -webkit-font-smoothing: antialiased;
       }
       #app {
         position: fixed;
@@ -52,19 +59,51 @@
         pointer-events: none;
         user-select: none;
       }
-      /* Boot veil: not a landing page - it self-dismisses on first frame. */
+      /* Boot veil: not a landing page - it self-dismisses on first frame.
+         Drawn, never typed: the build ships no font of its own, and rule 12
+         rules out falling back on whatever the browser has (section 2 rule 6
+         wants the 2D layer hand-drawn anyway). */
       #boot {
         position: fixed;
         inset: 0;
         display: grid;
         place-items: center;
         background: var(--dungeon-dark);
-        color: var(--haze-sky);
-        letter-spacing: 0.35em;
-        font-size: 13px;
-        text-transform: uppercase;
         transition: opacity 380ms ease-out;
         z-index: 10;
+      }
+      #boot svg {
+        width: 92px;
+        height: 92px;
+        overflow: visible;
+      }
+      #boot .mark {
+        fill: none;
+        stroke: var(--haze-sky);
+        stroke-width: 3;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      #boot .pupil {
+        fill: var(--haze-sky);
+        stroke: none;
+      }
+      /* The one failure the veil has to be able to say without words. */
+      #boot .fault {
+        display: none;
+        fill: none;
+        stroke: var(--tongue);
+        stroke-width: 4;
+        stroke-linecap: round;
+      }
+      #boot.fault .fault {
+        display: block;
+      }
+      #boot.fault .mark,
+      #boot.fault .pupil {
+        stroke: var(--stone-shade);
+        fill: none;
+        opacity: 0.5;
       }
       #boot.gone {
         opacity: 0;
@@ -75,7 +114,23 @@
   <body>
     <div id="app"></div>
     <div id="hud"></div>
-    <div id="boot">croak</div>
+    <div id="boot">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <g class="mark">
+          <!-- a frog looking up out of the dark, and one croak leaving it -->
+          <path d="M8 44c0-9 10.7-15 24-15s24 6 24 15" />
+          <circle cx="21" cy="24" r="7.5" />
+          <circle cx="43" cy="24" r="7.5" />
+          <path d="M26 44h12" />
+          <path d="M50 12c4.5-1.5 7 1 5.5 4" />
+        </g>
+        <circle class="pupil" cx="21" cy="25" r="2.6" />
+        <circle class="pupil" cx="43" cy="25" r="2.6" />
+        <g class="fault">
+          <path d="M14 14 50 50" />
+        </g>
+      </svg>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

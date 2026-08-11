@@ -24,8 +24,14 @@ export const TURN_RATE = 14.0; // rad/s
 
 // -------------------------------------------------------------------- roll
 export const ROLL_DURATION = f(26);
-/** i-frames span frames 1..14 of the roll: "invulnerable for the first half". */
-export const ROLL_IFRAME_START = f(1);
+/**
+ * i-frames cover the first 14 of the roll's 26 frames - "invulnerable for the
+ * first half". The window is half-open [START, END) and opens on the commit
+ * frame itself, following the Souls rule that i-frames begin on frame 1 of the
+ * animation: the frame you spend deciding to dodge must already be covered, or
+ * the dust cloud lies about when you were safe.
+ */
+export const ROLL_IFRAME_START = f(0);
 export const ROLL_IFRAME_END = f(14);
 export const ROLL_DISTANCE = 3.0; // u
 /** Fraction of the stamina bar one roll costs. */
@@ -44,6 +50,7 @@ export const ZERO_STAMINA_DMG_MULT = 1.5;
 
 // ------------------------------------------------------------------- input
 export const INPUT_BUFFER = f(9); // 150 ms
+/** Parked: nothing leaves the ground yet, so no ledge can grant it (A5's belfry). */
 export const COYOTE = f(6); // 100 ms
 
 // ------------------------------------------------------------------ attack
@@ -111,6 +118,14 @@ export const KNOCKBACK_SMALL_ENEMY = 2.0; // u
 export const KNOCKBACK_PLAYER = 1.2; // u
 export const PLAYER_HITSTUN = 0.25; // s
 export const PLAYER_IFRAMES_AFTER_HIT = 0.6; // s
+/**
+ * How long a struck regular enemy is staggered - the sibling of PLAYER_HITSTUN
+ * on the other side of the exchange. Section 5 names the player's number and
+ * TONGUE_YANK_STAGGER but not this one; it is added here rather than aliased
+ * inside an entity, so retuning the player's stun cannot silently retune every
+ * enemy in the game (section 12).
+ */
+export const ENEMY_STAGGER = f(15); // 0.25 s
 
 // ------------------------------------------------------------------ tongue
 export const TONGUE_RANGE = 7.0; // u
@@ -141,6 +156,13 @@ export const SFX_PITCH_VARIANCE = 0.06; // +/- 6% on every repeated sound
 // ------------------------------------------------------------------ health
 export const PLAYER_HP_MAX = 6;
 export const DEATH_COIN_DROP = 20;
+/**
+ * A1 placeholder so death is never terminal: the frog returns to its start and
+ * the regular enemies come back, which is the shrine rule minus the shrine. A2
+ * replaces this with the real loop - respawn at the last shrine rested at, and
+ * the DEATH_COIN_DROP ghost waiting where you fell.
+ */
+export const RESPAWN_DELAY = 1.2; // s
 
 // ------------------------------------------------------------------ camera
 /** Orthographic, immutable to the player. Pitch/yaw are authored per zone. */
@@ -153,6 +175,8 @@ export const CAM_DISTANCE = 40.0; // pull-back along the view axis (ortho: frami
 export const CAM_FOLLOW_LAMBDA = 6.0;
 /** Lock-on tilts the camera slightly higher. */
 export const CAM_LOCKON_PITCH_DELTA = (-3 * Math.PI) / 180;
+/** How fast that tilt settles: exp(-15 * 0.2 s) leaves ~5% of the delta. */
+export const CAM_LOCKON_LAMBDA = 15.0;
 export const CAM_NEAR = 0.1;
 export const CAM_FAR = 200;
 
@@ -189,6 +213,13 @@ export const SPORELING: EnemyStats = {
 export const PLAYER_RADIUS = 0.36;
 export const PLAYER_HEIGHT = 1.0; // total capsule height
 export const GRAVITY = -22.0; // u/s^2
+/**
+ * Falling speed cap. Nothing in Lilypond Downs falls far enough to reach it,
+ * but the solver only substeps a fixed number of times per frame, so a long
+ * drop (A5's three-floor belfry, A6's rooftop) would eventually out-run the
+ * capsule sweep and tunnel. Cheaper as a rule than as a bug.
+ */
+export const TERMINAL_VELOCITY = -30.0; // u/s
 export const MAX_SLOPE = (50 * Math.PI) / 180;
 export const STEP_HEIGHT = 0.35;
 export const GROUND_SNAP = 0.3;

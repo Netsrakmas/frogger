@@ -1,0 +1,748 @@
+/**
+ * CROAK - the frog. PROMPT.md sections 3 and 5.
+ *
+ * A six-state machine over a capsule controller. Every verb starts on the frame
+ * its input is consumed - transitions are checked before the state body runs,
+ * and nothing waits for an animation to finish (section 9 rule 8).
+ *
+ * The frame data, the i-frame window, the stamina economy and the knockback all
+ * come from core/constants. What lives here is the wiring and the greybox body.
+ */
+
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type {
+  Damageable,
+  GameContext,
+  HitInfo,
+  Level,
+  Player,
+  PlayerStateName,
+  Rng,
+} from '../core/types';
+import type { AttackFrames } from '../core/constants';
+import {
+  ACCEL_TIME,
+  COMBO_WINDOW_FROM,
+  DECEL_TIME,
+  KNOCKBACK_PLAYER,
+  LIGHT_ATK,
+  LOCKON_CONE,
+  LOCKON_RANGE,
+  MAGNETIZE_LUNGE,
+  MOVE_SPEED,
+  PLAYER_HITSTUN,
+  PLAYER_HP_MAX,
+  PLAYER_IFRAMES_AFTER_HIT,
+  PLAYER_RADIUS,
+  ROLL_DISTANCE,
+  ROLL_DURATION,
+  ROLL_IFRAME_END,
+  ROLL_IFRAME_START,
+  ROLL_SPEED_CURVE,
+  ROLL_STAMINA,
+  SQUASH_HOP,
+  SQUASH_IMPACT,
+  SQUASH_RECOVER,
+  STAMINA_MAX,
+  STAMINA_REGEN_DELAY,
+  STAMINA_REGEN_DELAY_EMPTY,
+  STAMINA_REGEN_RATE,
+  STEP_HEIGHT,
+  STICK_COMBO_LENGTH,
+  TICK_DT,
+  TRAUMA_HIT,
+  TRAUMA_PLAYER_HURT,
+  TURN_RATE,
+  ZERO_STAMINA_DMG_MULT,
+} from '../core/constants';
+import { makeOutline, material } from '../render/materials';
+import { createController } from '../physics/controller';
+
+// ------------------------------------------------------------- style tuning
+// Model proportions and presentation, kept beside the model they describe the
+// way materials.ts keeps its look numbers. No gameplay rule reads any of them.
+
+/** Hop-bob: a frog never quite walks. Tiny on purpose - it must not read as float. */
+const BOB_RATE = 11.0; // rad/s
+const BOB_AMPLITUDE = 0.035; // u
+/** Visual catch-up when the controller climbs a step, so a stair is not a pop. */
+const STEP_SMOOTH_RATE = 22.0;
+/** Impacts spark at the frog's chest, not at its feet. */
+const FX_HEIGHT = 0.45;
+
+// -------------------------------------------------------------- solver slack
+
+const TAU = Math.PI * 2;
+/** Half a tick. Frame windows are compared on accumulated floats, not integers. */
+const TIME_EPS = TICK_DT * 0.5;
+/** Below this the stick is at rest; the input system has already deadzoned it. */
+const STICK_EPS = 1e-3;
+/** Two ground-plane points this close have no direction between them. */
+const TOUCHING = 1e-4;
+/**
+ * ROLL_SPEED_CURVE is a shape, not a distance. Integrating it once turns
+ * ROLL_DISTANCE into the distance the roll actually covers, and keeps doing so
+ * if the curve is ever retuned.
+ */
+const ROLL_CURVE_AREA = ((): number => {
+  const samples = 512;
+  let sum = 0;
+  for (let i = 0; i < samples; i++) sum += ROLL_SPEED_CURVE((i + 0.5) / samples);
+  return sum / samples;
+})();
+const ROLL_PEAK_SPEED = ROLL_DISTANCE / (ROLL_DURATION * ROLL_CURVE_AREA);
+/** Linear ramp-down over the stun, integrating to exactly KNOCKBACK_PLAYER. */
+const KNOCKBACK_PLAYER_SPEED = (2 * KNOCKBACK_PLAYER) / PLAYER_HITSTUN;
+
+const attackLength = (frames: AttackFrames): number =>
+  frames.windup + frames.active + frames.recovery;
+
+function wrapAngle(angle: number): number {
+  const wrapped = (angle + Math.PI) % TAU;
+  return (wrapped < 0 ? wrapped + TAU : wrapped) - Math.PI;
+}
+
+// ------------------------------------------------------------------- model
+
+/** Bakes a placement into the geometry so parts can be merged by palette role. */
+function place(
+  geometry: THREE.BufferGeometry,
+  x: number,
+  y: number,
+  z: number,
+  sx = 1,
+  sy = 1,
+  sz = 1,
+): THREE.BufferGeometry {
+  geometry.scale(sx, sy, sz);
+  geometry.translate(x, y, z);
+  return geometry;
+}
+
+function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const merged = mergeGeometries(parts);
+  for (const part of parts) part.dispose();
+  return merged;
+}
+
+interface FrogModel {
+  visual: THREE.Group;
+  geometries: THREE.BufferGeometry[];
+}
+
+/**
+ * The greybox frog: round and squat so the silhouette fights the world's
+ * angular geometry (section 2, visual grammar rule 2). Everything is primitives
+ * merged down to one mesh per palette role - four draw calls plus their hulls,
+ * which is what keeps a 150-call budget survivable once enemies arrive.
+ */
+function buildFrog(): FrogModel {
+  const visual = new THREE.Group();
+  visual.name = 'frogBody';
+
+  const skin = merge([
+    // torso: wider than it is tall, and it never leaves the ground
+    place(new THREE.SphereGeometry(0.36, 10, 7), 0, 0.38, 0, 1.12, 0.92, 1.0),
+    // head, set forward and high - the profile has to read as frog, not ball
+    place(new THREE.SphereGeometry(0.27, 10, 7), 0, 0.62, 0.1, 1.0, 0.86, 1.0),
+    // stubby limbs
+    place(new THREE.SphereGeometry(0.11, 7, 5), 0.4, 0.36, 0.03, 1.0, 0.9, 1.3),
+    place(new THREE.SphereGeometry(0.11, 7, 5), -0.4, 0.36, 0.03, 1.0, 0.9, 1.3),
+    place(new THREE.SphereGeometry(0.13, 7, 5), 0.21, 0.075, 0.1, 1.15, 0.55, 1.5),
+    place(new THREE.SphereGeometry(0.13, 7, 5), -0.21, 0.075, 0.1, 1.15, 0.55, 1.5),
+  ]);
+
+  const pale = merge([
+    // belly patch, sitting proud of the chest above the tunic
+    place(new THREE.SphereGeometry(0.26, 10, 7), 0, 0.5, 0.22, 0.8, 0.62, 0.55),
+    // oversized eyes: the whole read of the character at gameplay zoom
+    place(new THREE.SphereGeometry(0.135, 9, 7), 0.165, 0.78, 0.1),
+    place(new THREE.SphereGeometry(0.135, 9, 7), -0.165, 0.78, 0.1),
+    // tunic trim
+    place(
+      new THREE.TorusGeometry(0.37, 0.022, 5, 14).rotateX(-Math.PI / 2),
+      0,
+      0.2,
+      0,
+      1.05,
+      1,
+      1,
+    ),
+  ]);
+
+  const tunic = merge([
+    place(new THREE.SphereGeometry(0.42, 12, 8), 0, 0.28, 0, 1.03, 0.42, 0.98),
+  ]);
+
+  const pupils = merge([
+    place(new THREE.SphereGeometry(0.075, 7, 5), 0.187, 0.797, 0.186),
+    place(new THREE.SphereGeometry(0.075, 7, 5), -0.187, 0.797, 0.186),
+  ]);
+
+  const body = new THREE.Mesh(skin, material('heroBody', { flatShading: true }));
+  body.name = 'frogSkin';
+  const belly = new THREE.Mesh(pale, material('heroBelly', { flatShading: true }));
+  belly.name = 'frogBelly';
+  const coat = new THREE.Mesh(tunic, material('heroTunic', { flatShading: true }));
+  coat.name = 'frogTunic';
+  const eyes = new THREE.Mesh(pupils, material('dungeonDark'));
+  eyes.name = 'frogPupils';
+
+  for (const mesh of [body, belly, coat, eyes]) {
+    // Grounded by the key light's own shadow, and by that ALONE - section 9
+    // rule 5 asks for real OR blob, and a character wearing both reads as a
+    // rendering fault. The real one wins here because a blob decal directly
+    // under a wide, low body is almost entirely hidden by that body at a -40
+    // degree pitch, while the offset silhouette is legible from any angle and
+    // says something true about where the sun is.
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    visual.add(mesh);
+  }
+
+  const geometries = [skin, pale, tunic, pupils];
+  // Outline the three masses that own the silhouette; the pupils sit inside the
+  // eyes and would only add a hull nobody can see. The hulls are clones, so
+  // they are ours to release.
+  for (const mesh of [body, belly, coat]) {
+    const outline = makeOutline(mesh);
+    geometries.push(outline.geometry);
+    visual.add(outline);
+  }
+
+  return { visual, geometries };
+}
+
+// ------------------------------------------------------------------ player
+
+export function createPlayer(
+  scene: THREE.Scene,
+  level: Level,
+  rng: Rng,
+): Player {
+  const controller = createController(level.collider, level.playerStart);
+  // Settle onto the floor before the first frame renders, so a spawn authored a
+  // hair off the ground never shows the frog falling into its own level.
+  controller.teleport(level.playerStart);
+
+  const root = new THREE.Group();
+  root.name = 'player';
+  const model = buildFrog();
+  root.add(model.visual);
+
+  root.position.copy(controller.position);
+  scene.add(root);
+
+  // The bob starts on a per-run phase so the frog is not visibly in lockstep
+  // with every other bobbing thing. One draw from its own seeded stream, so a
+  // replayed seed replays identically and Math.random stays out of it.
+  const bobPhase = rng.fork('player:bob').next() * TAU;
+
+  let state: PlayerStateName = 'idle';
+  let stateTime = 0;
+  let now = 0;
+  let facing = 0;
+  let hp = PLAYER_HP_MAX;
+  let stamina = STAMINA_MAX;
+  let regenAt = 0;
+  /**
+   * Section 3: at zero stamina incoming damage is x1.5 "until the bar refills".
+   * Reading `stamina <= 0` instead would lift the penalty on the first regen
+   * tick, three seconds before the bar is anywhere near full - the cost of the
+   * forgiveness would be a rounding error rather than a punishment window.
+   */
+  let zeroStaminaLatched = false;
+  let invulnUntil = 0;
+  let speed = 0;
+  let comboIndex = 0;
+  let comboQueued = false;
+  let lungeLeft = 0;
+  let lungeSpeed = 0;
+  let knockSpeed = 0;
+  let squash = 1;
+  /**
+   * takeHit runs inside somebody else's update, so the state it enters has not
+   * had a frame yet. Without this the first - and fastest - frame of hitstun
+   * would be skipped, and the knockback would land short of KNOCKBACK_PLAYER.
+   */
+  let freshEntry = false;
+  let wasGrounded = controller.grounded;
+  let visualY = controller.position.y;
+  let ctxRef: GameContext | null = null;
+
+  const stick = new THREE.Vector3();
+  const moveDir = new THREE.Vector3(0, 0, 1);
+  const rollDir = new THREE.Vector3(0, 0, 1);
+  const knockDir = new THREE.Vector3(0, 0, 1);
+  const velocity = new THREE.Vector3();
+  const displacement = new THREE.Vector3();
+  const hitDir = new THREE.Vector3();
+  const swung = new Set<Damageable>();
+
+  const alive = (): boolean => state !== 'dead';
+
+  const inRollIframes = (): boolean =>
+    state === 'roll' &&
+    stateTime >= ROLL_IFRAME_START - TIME_EPS &&
+    stateTime < ROLL_IFRAME_END - TIME_EPS;
+
+  const isInvulnerable = (): boolean => inRollIframes() || now < invulnUntil;
+
+  function spendStamina(cost: number): void {
+    stamina = Math.max(0, stamina - cost);
+    // Emptying the bar buys a longer wait: that is the whole cost of Tunic's
+    // forgiveness rule, and it has to be felt before the bar comes back.
+    if (stamina <= 0) zeroStaminaLatched = true;
+    regenAt = now + (stamina <= 0 ? STAMINA_REGEN_DELAY_EMPTY : STAMINA_REGEN_DELAY);
+  }
+
+  function turnToward(targetYaw: number, dt: number): void {
+    const delta = wrapAngle(targetYaw - facing);
+    const step = TURN_RATE * dt;
+    facing = wrapAngle(facing + Math.max(-step, Math.min(step, delta)));
+  }
+
+  /** Screen-space stick to a world direction on the ground plane. */
+  function readStick(ctx: GameContext): number {
+    const magnitude = Math.min(1, Math.hypot(ctx.input.moveX, ctx.input.moveZ));
+    if (magnitude <= STICK_EPS) return 0;
+
+    ctx.cameraRig.relativeMove(ctx.input.moveX, ctx.input.moveZ, stick);
+    stick.y = 0;
+    const length = stick.length();
+    if (length <= STICK_EPS) return 0;
+    // Normalise here rather than trusting the rig's scaling: this is the only
+    // place a diagonal could outrun MOVE_SPEED, and it must not.
+    stick.multiplyScalar(1 / length);
+    moveDir.copy(stick);
+    return magnitude;
+  }
+
+  function pickTarget(ctx: GameContext): Damageable | null {
+    let best: Damageable | null = null;
+    let bestDistance = Infinity;
+    for (const target of ctx.damageablesFor('player')) {
+      if (!target.alive) continue;
+      const dx = target.position.x - controller.position.x;
+      const dz = target.position.z - controller.position.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance > LOCKON_RANGE || distance >= bestDistance) continue;
+      if (distance > TOUCHING) {
+        const off = Math.abs(wrapAngle(Math.atan2(dx, dz) - facing));
+        if (off > LOCKON_CONE) continue;
+      }
+      bestDistance = distance;
+      best = target;
+    }
+    return best;
+  }
+
+  /** Analytic arc overlap on the ground plane - PROMPT.md section 1, no engine. */
+  function strike(ctx: GameContext, frames: AttackFrames): void {
+    for (const target of ctx.damageablesFor('player')) {
+      if (!target.alive || swung.has(target)) continue;
+
+      const dx = target.position.x - controller.position.x;
+      const dz = target.position.z - controller.position.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance > frames.reach + target.hurtRadius) continue;
+      if (distance > TOUCHING) {
+        const off = Math.abs(wrapAngle(Math.atan2(dx, dz) - facing));
+        // A fat target covers more of the arc than its centre point suggests.
+        const widen = Math.asin(
+          Math.min(1, target.hurtRadius / Math.max(distance, target.hurtRadius)),
+        );
+        if (off > frames.arc + widen) continue;
+      }
+
+      swung.add(target);
+      if (distance > TOUCHING) hitDir.set(dx / distance, 0, dz / distance);
+      else hitDir.set(Math.sin(facing), 0, Math.cos(facing));
+
+      const hit: HitInfo = {
+        damage: frames.damage,
+        knockback: frames.knockback,
+        direction: hitDir.clone(),
+        hitstop: frames.hitstop,
+        source: 'player',
+      };
+      if (!target.takeHit(hit)) continue;
+
+      // Visual, camera and freeze on the same frame as the damage - section 9
+      // rule 9. The audio hook lands here too once A9 brings it.
+      ctx.requestHitstop(frames.hitstop);
+      ctx.addTrauma(TRAUMA_HIT);
+      ctx.spawnFx(
+        'hitSpark',
+        new THREE.Vector3(
+          controller.position.x + dx * 0.5,
+          controller.position.y + FX_HEIGHT,
+          controller.position.z + dz * 0.5,
+        ),
+        hitDir.clone(),
+      );
+      lungeLeft = 0; // a connect stops the lunge dead, so hits read as impacts
+    }
+  }
+
+  function enterIdle(): void {
+    state = 'idle';
+    stateTime = 0;
+    freshEntry = true;
+  }
+
+  function enterMove(): void {
+    state = 'move';
+    stateTime = 0;
+    freshEntry = true;
+  }
+
+  function enterRoll(ctx: GameContext, magnitude: number): void {
+    // The stick wins over the facing: a roll is an escape, and it has to go
+    // where the player is pointing on the frame they asked for it.
+    if (magnitude > 0) rollDir.copy(moveDir);
+    else rollDir.set(Math.sin(facing), 0, Math.cos(facing));
+    facing = Math.atan2(rollDir.x, rollDir.z);
+
+    // Tunic's forgiveness: the roll happens whether or not it can be paid for.
+    spendStamina(ROLL_STAMINA);
+
+    state = 'roll';
+    stateTime = 0;
+    freshEntry = true;
+    speed = 0;
+    comboQueued = false;
+    lungeLeft = 0;
+    squash = SQUASH_HOP;
+    // The dust cloud is the i-frame tell, so it is spawned with the state, not
+    // with the first frame of invulnerability.
+    ctx.spawnFx('rollDust', controller.position.clone(), rollDir.clone());
+  }
+
+  function enterAttack(ctx: GameContext, index: number, magnitude: number): void {
+    state = 'attack';
+    stateTime = 0;
+    freshEntry = true;
+    comboIndex = index;
+    comboQueued = false;
+    speed = 0;
+    swung.clear();
+
+    const target = pickTarget(ctx);
+    if (target !== null) {
+      const dx = target.position.x - controller.position.x;
+      const dz = target.position.z - controller.position.z;
+      facing = Math.atan2(dx, dz);
+      const gap = Math.hypot(dx, dz) - LIGHT_ATK.reach;
+      lungeLeft = Math.max(0, Math.min(gap, MAGNETIZE_LUNGE));
+    } else {
+      if (magnitude > 0) facing = Math.atan2(moveDir.x, moveDir.z);
+      lungeLeft = 0;
+    }
+    // The lunge is spent by the time the swing lands, never during recovery.
+    lungeSpeed = lungeLeft / (LIGHT_ATK.windup + LIGHT_ATK.active);
+  }
+
+  function enterHitstun(): void {
+    state = 'hitstun';
+    stateTime = 0;
+    freshEntry = true;
+    speed = 0;
+    comboQueued = false;
+    lungeLeft = 0;
+    knockSpeed = KNOCKBACK_PLAYER_SPEED;
+    squash = SQUASH_IMPACT;
+  }
+
+  function enterDead(): void {
+    state = 'dead';
+    stateTime = 0;
+    freshEntry = true;
+    speed = 0;
+    knockSpeed = 0;
+    lungeLeft = 0;
+    velocity.set(0, 0, 0);
+    squash = SQUASH_IMPACT;
+  }
+
+  /**
+   * Verbs are claimed before any state body runs, so the frame that consumes
+   * the press is the frame the verb starts on. Presses are only consumed when
+   * they can be honoured - otherwise they stay buffered and fire the moment the
+   * frog is free.
+   */
+  function claimVerbs(ctx: GameContext, magnitude: number): void {
+    if (state === 'dead') return;
+
+    const recoveryAt = LIGHT_ATK.windup + LIGHT_ATK.active;
+    const canRollFromAttack =
+      state === 'attack' &&
+      stateTime >= recoveryAt + LIGHT_ATK.rollCancelFrom - TIME_EPS;
+
+    if (state === 'idle' || state === 'move' || canRollFromAttack) {
+      if (ctx.input.consume('roll')) {
+        enterRoll(ctx, magnitude);
+        return;
+      }
+    }
+
+    if (state === 'idle' || state === 'move') {
+      if (ctx.input.consume('attack')) enterAttack(ctx, 0, magnitude);
+      return;
+    }
+
+    if (
+      state === 'attack' &&
+      !comboQueued &&
+      comboIndex + 1 < STICK_COMBO_LENGTH &&
+      stateTime >= COMBO_WINDOW_FROM - TIME_EPS
+    ) {
+      if (ctx.input.consume('attack')) comboQueued = true;
+    }
+  }
+
+  /** Shared by idle and move: accelerate, decelerate, and turn into the stick. */
+  function groundMovement(dt: number, magnitude: number): void {
+    const target = MOVE_SPEED * magnitude;
+    if (target > speed) {
+      speed = Math.min(target, speed + (MOVE_SPEED / ACCEL_TIME) * dt);
+    } else {
+      speed = Math.max(target, speed - (MOVE_SPEED / DECEL_TIME) * dt);
+    }
+    if (magnitude > 0) turnToward(Math.atan2(moveDir.x, moveDir.z), dt);
+    velocity.set(moveDir.x * speed, 0, moveDir.z * speed);
+  }
+
+  function step(ctx: GameContext, dt: number, magnitude: number): void {
+    velocity.set(0, 0, 0);
+
+    switch (state) {
+      case 'idle': {
+        if (magnitude > 0) enterMove();
+        groundMovement(dt, magnitude);
+        break;
+      }
+
+      case 'move': {
+        if (magnitude <= 0 && speed <= 0) enterIdle();
+        groundMovement(dt, magnitude);
+        break;
+      }
+
+      case 'roll': {
+        if (stateTime >= ROLL_DURATION - TIME_EPS) {
+          // The successor takes the rest of the frame: a roll flows straight
+          // back into a run, with no dead frame in between.
+          if (magnitude > 0) enterMove();
+          else enterIdle();
+          groundMovement(dt, magnitude);
+          break;
+        }
+        // Sampled at the frame midpoint so the discrete sum of 26 frames lands
+        // on ROLL_DISTANCE instead of overshooting it.
+        const t = Math.min(1, (stateTime + dt * 0.5) / ROLL_DURATION);
+        const rollSpeed = ROLL_PEAK_SPEED * ROLL_SPEED_CURVE(t);
+        velocity.set(rollDir.x * rollSpeed, 0, rollDir.z * rollSpeed);
+        break;
+      }
+
+      case 'attack': {
+        if (stateTime >= attackLength(LIGHT_ATK) - TIME_EPS) {
+          if (comboQueued && comboIndex + 1 < STICK_COMBO_LENGTH) {
+            enterAttack(ctx, comboIndex + 1, magnitude);
+          } else {
+            if (magnitude > 0) enterMove();
+            else enterIdle();
+            groundMovement(dt, magnitude);
+          }
+          break;
+        }
+
+        if (lungeLeft > 0) {
+          const travel = Math.min(lungeLeft, lungeSpeed * dt);
+          lungeLeft -= travel;
+          const lunge = travel / dt;
+          velocity.set(Math.sin(facing) * lunge, 0, Math.cos(facing) * lunge);
+        }
+
+        const activeFrom = LIGHT_ATK.windup;
+        const activeTo = LIGHT_ATK.windup + LIGHT_ATK.active;
+        if (stateTime >= activeFrom - TIME_EPS && stateTime < activeTo - TIME_EPS) {
+          strike(ctx, LIGHT_ATK);
+        }
+        break;
+      }
+
+      case 'hitstun': {
+        if (stateTime >= PLAYER_HITSTUN - TIME_EPS) {
+          knockSpeed = 0;
+          if (magnitude > 0) enterMove();
+          else enterIdle();
+          groundMovement(dt, magnitude);
+          break;
+        }
+        const fade = Math.max(
+          0,
+          1 - (stateTime + dt * 0.5) / PLAYER_HITSTUN,
+        );
+        const push = knockSpeed * fade;
+        velocity.set(knockDir.x * push, 0, knockDir.z * push);
+        break;
+      }
+
+      case 'dead': {
+        break;
+      }
+    }
+  }
+
+  /** Everything the simulation does not care about: bob, squash, step smoothing. */
+  function present(ctx: GameContext, dt: number): void {
+    const position = controller.position;
+
+    if (controller.grounded) {
+      if (!wasGrounded) {
+        // Volume-preserving impact: the counter-axis comes back out of squash
+        // in the scale below, so the frog spreads exactly as much as it flattens.
+        squash = SQUASH_IMPACT;
+        ctx.spawnFx('landDust', position.clone());
+      }
+    }
+    wasGrounded = controller.grounded;
+
+    // Climbing a step moves the capsule up to STEP_HEIGHT in one frame; the
+    // body catches up over a few frames so a stair reads as a hop, not a jump
+    // cut. Anything bigger than a step is a real fall and is followed exactly.
+    if (Math.abs(position.y - visualY) > STEP_HEIGHT) visualY = position.y;
+    else visualY += (position.y - visualY) * (1 - Math.exp(-STEP_SMOOTH_RATE * dt));
+
+    root.position.set(position.x, visualY, position.z);
+    root.rotation.y = facing;
+
+    squash += (1 - squash) * (1 - Math.exp(-SQUASH_RECOVER * dt));
+    const counter = 1 / Math.sqrt(squash);
+    model.visual.scale.set(counter, squash, counter);
+
+    // presentTime, not simTime: the frog keeps breathing through hitstop.
+    const gait = Math.min(1, speed / MOVE_SPEED);
+    const bob = Math.sin(ctx.loop.presentTime * BOB_RATE + bobPhase);
+    model.visual.position.y = Math.abs(bob) * BOB_AMPLITUDE * gait;
+  }
+
+  function takeHit(hit: HitInfo): boolean {
+    if (!alive() || isInvulnerable()) return false;
+
+    if (Math.abs(hit.direction.x) + Math.abs(hit.direction.z) > TOUCHING) {
+      knockDir.set(hit.direction.x, 0, hit.direction.z).normalize();
+    } else {
+      knockDir.set(-Math.sin(facing), 0, -Math.cos(facing));
+    }
+
+    const multiplier = zeroStaminaLatched ? ZERO_STAMINA_DMG_MULT : 1;
+    hp = Math.max(0, hp - hit.damage * multiplier);
+    invulnUntil = now + PLAYER_IFRAMES_AFTER_HIT;
+
+    if (hp <= 0) enterDead();
+    else enterHitstun();
+
+    const ctx = ctxRef;
+    if (ctx !== null) {
+      ctx.addTrauma(TRAUMA_PLAYER_HURT);
+      ctx.requestHitstop(hit.hitstop);
+      ctx.spawnFx(
+        'hitSpark',
+        new THREE.Vector3(
+          controller.position.x,
+          controller.position.y + FX_HEIGHT,
+          controller.position.z,
+        ),
+        knockDir.clone(),
+      );
+    }
+    return true;
+  }
+
+  return {
+    root,
+    controller,
+    get alive(): boolean {
+      return alive();
+    },
+    get state(): PlayerStateName {
+      return state;
+    },
+    get stamina(): number {
+      return stamina;
+    },
+    get hp(): number {
+      return hp;
+    },
+    get invulnerable(): boolean {
+      return isInvulnerable();
+    },
+    get zeroStaminaPenalty(): boolean {
+      return zeroStaminaLatched;
+    },
+    get facing(): number {
+      return facing;
+    },
+    get position(): THREE.Vector3 {
+      return controller.position;
+    },
+    get hurtRadius(): number {
+      return PLAYER_RADIUS;
+    },
+    takeHit,
+
+    respawn(at: THREE.Vector3): void {
+      controller.teleport(at);
+      hp = PLAYER_HP_MAX;
+      stamina = STAMINA_MAX;
+      zeroStaminaLatched = false;
+      regenAt = 0;
+      speed = 0;
+      knockSpeed = 0;
+      lungeLeft = 0;
+      squash = 1;
+      velocity.set(0, 0, 0);
+      swung.clear();
+      // A beat of grace, so a respawn cannot hand the frog straight back into
+      // a blow it never had the frames to read.
+      invulnUntil = now + PLAYER_IFRAMES_AFTER_HIT;
+      enterIdle();
+    },
+
+    update(dt: number, ctx: GameContext): void {
+      ctxRef = ctx;
+      now += dt;
+      if (freshEntry) freshEntry = false;
+      else stateTime += dt;
+
+      if (now >= regenAt && stamina < STAMINA_MAX) {
+        stamina = Math.min(STAMINA_MAX, stamina + STAMINA_REGEN_RATE * dt);
+        if (stamina >= STAMINA_MAX) zeroStaminaLatched = false;
+      }
+
+      const magnitude = state === 'dead' ? 0 : readStick(ctx);
+      claimVerbs(ctx, magnitude);
+      step(ctx, dt, magnitude);
+
+      displacement.set(velocity.x * dt, 0, velocity.z * dt);
+      controller.move(displacement, dt);
+
+      present(ctx, dt);
+      // Anything entered during this frame has now run a frame of its own.
+      freshEntry = false;
+    },
+
+    dispose(): void {
+      root.removeFromParent();
+      // Bodies AND their outline hulls: the hulls are clones this entity was
+      // handed, so nothing else can free them.
+      for (const geometry of model.geometries) geometry.dispose();
+      // Materials are shared, cached instances owned by the material kit;
+      // disposing one here would tear it out from under every other entity.
+    },
+  };
+}
