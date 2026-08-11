@@ -26,6 +26,7 @@ import type {
   Rng,
 } from '../core/types';
 import {
+  COIN_DROP_SPORELING,
   ENEMY_STAGGER,
   HITSTOP_KILL,
   HITSTOP_LIGHT,
@@ -402,6 +403,7 @@ export function createSporeling(
       new THREE.Vector3(pos.x, pos.y + FX_HEIGHT, pos.z),
       knockDir.clone(),
     );
+    ctx.dropCoins(COIN_DROP_SPORELING, new THREE.Vector3(pos.x, pos.y, pos.z));
   }
 
   /** Analytic disc overlap on the ground plane - PROMPT.md section 1, no engine. */
@@ -611,6 +613,9 @@ export function createSporeling(
     },
     get position(): THREE.Vector3 {
       return pos;
+    },
+    get facing(): number {
+      return facing;
     },
     get hurtRadius(): number {
       return BODY_RADIUS;

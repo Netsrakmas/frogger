@@ -6,6 +6,7 @@
  */
 
 import type * as THREE from 'three';
+import type { WeaponId } from './constants';
 
 // --------------------------------------------------------------------- input
 
@@ -160,6 +161,11 @@ export interface Player extends Entity, Damageable {
   /** Yaw in radians. */
   readonly facing: number;
   readonly controller: CharacterController;
+  readonly weapon: WeaponId;
+  /** The enemy a hard lock is held on, or null when free-aiming. */
+  readonly lockTarget: Damageable | null;
+  readonly lockedOn: boolean;
+  equip(weapon: WeaponId): void;
   /** Restore to full and stand up at `at`, clearing every in-flight action. */
   respawn(at: THREE.Vector3): void;
 }
@@ -177,6 +183,39 @@ export interface Enemy extends Entity, Damageable {
   readonly state: EnemyStateName;
   readonly hp: number;
   readonly kind: string;
+  /** Yaw in radians. Which way a guard's shield points is gameplay, not decor. */
+  readonly facing: number;
+}
+
+// ------------------------------------------------------------ world objects
+
+export type PickupKind = 'coin' | 'ghost' | 'weapon';
+
+export interface Pickup extends Entity {
+  readonly kind: PickupKind;
+  readonly position: THREE.Vector3;
+  /** Coins carried: 1 for a loose coin, the whole purse for a ghost. */
+  readonly value: number;
+}
+
+export interface Shrine extends Entity {
+  readonly id: string;
+  readonly position: THREE.Vector3;
+  /** True once this shrine has been rested at - it is a respawn point now. */
+  readonly claimed: boolean;
+  inRange(from: THREE.Vector3): boolean;
+  /** Light it and make it the checkpoint. Idempotent. */
+  claim(): void;
+  /** Drives the resting flourish; the rest itself is the game's job. */
+  pulse(): void;
+}
+
+/** The run's carried state. Death moves coins out of it and into a ghost. */
+export interface Progress {
+  readonly coins: number;
+  add(amount: number): void;
+  /** Removes up to `amount` and returns what was actually taken. */
+  take(amount: number): number;
 }
 
 // ------------------------------------------------------------------------ fx
@@ -186,15 +225,29 @@ export type FxKind =
   | 'hitSpark'
   | 'sporePuff'
   | 'footstep'
-  | 'landDust';
+  | 'landDust'
+  /** A blow turned by the Beetle Guard's shield: sparks, no blood. */
+  | 'guardSpark'
+  | 'coinPop'
+  | 'shrineRest';
 
 // ------------------------------------------------------------------------ ui
+
+export type ToastIcon = 'coins' | 'weapon' | 'rested';
 
 export interface Hud {
   readonly root: HTMLElement;
   setStamina(value01: number): void;
   setHp(current: number, max: number): void;
   setZeroStaminaPenalty(active: boolean): void;
+  setCoins(count: number): void;
+  setWeapon(weapon: WeaponId): void;
+  setLockedOn(active: boolean): void;
+  /**
+   * A drawn acknowledgement that fades: what you got, and how many. Icons and
+   * numerals only - the build ships no font, and the world does the teaching.
+   */
+  toast(icon: ToastIcon, count?: number): void;
   /** Uses presentTime, so it keeps animating during hitstop. */
   update(dt: number): void;
   dispose(): void;
@@ -215,10 +268,16 @@ export interface GameContext {
   readonly level: Level;
   readonly player: Player;
   readonly enemies: Enemy[];
+  /** Coins, ghosts and unclaimed weapons on the ground. A3's tongue reads it. */
+  readonly pickups: Pickup[];
+  readonly shrines: Shrine[];
   readonly hud: Hud;
+  readonly progress: Progress;
   addTrauma(amount: number): void;
   requestHitstop(seconds: number): void;
   spawnFx(kind: FxKind, position: THREE.Vector3, dir?: THREE.Vector3): void;
+  /** Scatter `amount` coins at `position` - how a dying enemy pays out. */
+  dropCoins(amount: number, position: THREE.Vector3): void;
   /** Every Damageable that can receive a player hit right now. */
   damageablesFor(source: 'player' | 'enemy'): Damageable[];
 }
@@ -239,6 +298,12 @@ export interface GameSample {
   facing: number;
   grounded: boolean;
   enemiesAlive: number;
+  weapon: WeaponId;
+  lockedOn: boolean;
+  coins: number;
+  pickups: number;
+  ghosts: number;
+  shrinesClaimed: number;
   trauma: number;
   hitstopRemaining: number;
   drawCalls: number;
@@ -250,6 +315,27 @@ export interface GameSample {
  * Gated test API (only attached with ?test=1 or in dev). Never shipped as
  * visible UI - PROMPT.md section 9 rule 12.
  */
+export interface EnemySnapshot {
+  kind: string;
+  state: EnemyStateName;
+  hp: number;
+  facing: number;
+  alive: boolean;
+  pos: [number, number, number];
+}
+
+export interface ShrineSnapshot {
+  id: string;
+  claimed: boolean;
+  pos: [number, number, number];
+}
+
+export interface PickupSnapshot {
+  kind: PickupKind;
+  value: number;
+  pos: [number, number, number];
+}
+
 export interface TestApi {
   readonly threeRevision: string;
   readonly ready: boolean;
@@ -268,6 +354,9 @@ export interface TestApi {
   /** Force-damage the player from a direction, to measure i-frames. */
   probeHit(damage?: number): boolean;
   teleportPlayer(x: number, y: number, z: number): void;
+  enemies(): EnemySnapshot[];
+  shrines(): ShrineSnapshot[];
+  pickupList(): PickupSnapshot[];
 }
 
 declare global {

@@ -23,9 +23,17 @@ import type {
   GameContext,
   Level,
   Loop,
+  Pickup,
+  Progress,
   Rng,
+  Shrine,
 } from './core/types';
-import { DEFAULT_SEED, PLAYER_HP_MAX, RESPAWN_DELAY } from './core/constants';
+import {
+  DEATH_COIN_DROP,
+  DEFAULT_SEED,
+  PLAYER_HP_MAX,
+  RESPAWN_DELAY,
+} from './core/constants';
 import { createInput } from './core/input';
 import { createLoop } from './core/loop';
 import { createRng } from './core/rng';
@@ -37,6 +45,9 @@ import { createCameraRig } from './world/camera';
 import { createLevel } from './world/level';
 import { createPlayer } from './entities/player';
 import { createSporeling } from './entities/sporeling';
+import { createBeetleGuard } from './entities/beetle';
+import { createCoin, createGhost, createWeaponPickup } from './entities/pickup';
+import { createShrine } from './world/shrine';
 import { createHud } from './ui/hud';
 
 export interface Game {
@@ -64,6 +75,7 @@ type EnemyFactory = (
 /** SpawnPoint.type is authored data, so the mapping is data too. */
 const ENEMY_FACTORIES: Record<string, EnemyFactory | undefined> = {
   sporeling: createSporeling,
+  beetleGuard: createBeetleGuard,
 };
 
 export function createGame(
@@ -116,6 +128,39 @@ export function createGame(
 
   spawnEnemies();
 
+  const pickups: Pickup[] = [];
+  const shrines: Shrine[] = [];
+  /** The ghost currently owed to the player. Dying again abandons it for good. */
+  let ghost: Pickup | null = null;
+  let coins = 0;
+
+  for (const spawn of level.spawns) {
+    if (spawn.type.startsWith('shrine:')) {
+      shrines.push(
+        createShrine(scene, spawn.type.slice('shrine:'.length), spawn.position),
+      );
+    } else if (spawn.type === 'sword') {
+      pickups.push(createWeaponPickup(scene, spawn.position, 'sword'));
+    }
+  }
+
+  const progress: Progress = {
+    get coins(): number {
+      return coins;
+    },
+    add(amount: number): void {
+      coins = Math.max(0, coins + Math.max(0, Math.round(amount)));
+    },
+    take(amount: number): number {
+      const taken = Math.min(coins, Math.max(0, Math.round(amount)));
+      coins -= taken;
+      return taken;
+    },
+  };
+
+  /** Where the frog wakes up. Moves to whichever shrine was last rested at. */
+  let checkpoint = level.playerStart.clone();
+
   const loop = createLoop({ step, render });
 
   /** The player is the only thing an enemy can hit, and it never changes. */
@@ -130,7 +175,10 @@ export function createGame(
     level,
     player,
     enemies,
+    pickups,
+    shrines,
     hud,
+    progress,
 
     addTrauma(amount: number): void {
       cameraRig.addTrauma(amount);
@@ -143,6 +191,12 @@ export function createGame(
 
     spawnFx(kind: FxKind, position: THREE.Vector3, dir?: THREE.Vector3): void {
       fx.spawn(kind, position, dir);
+    },
+
+    dropCoins(amount: number, position: THREE.Vector3): void {
+      for (let i = 0; i < amount; i++) {
+        pickups.push(createCoin(scene, position, rng.fork(`coin:${coinSerial++}`)));
+      }
     },
 
     damageablesFor(source: 'player' | 'enemy'): Damageable[] {
@@ -171,8 +225,10 @@ export function createGame(
   // -------------------------------------------------------------------- tick
 
   let pumpedFrame = -1;
-  /** Seconds the frog has been down, driving the A1 respawn. */
+  /** Seconds the frog has been down, before the last shrine takes it back. */
   let deadFor = 0;
+  /** Distinct rng streams per coin, so a payout is deterministic per kill. */
+  let coinSerial = 0;
 
   /**
    * The input buffer ages on wall time and must be pumped exactly once per
@@ -202,23 +258,79 @@ export function createGame(
     }
   }
 
+  function refillEnemies(): void {
+    for (const enemy of enemies) enemy.dispose();
+    enemies.length = 0;
+    spawnEnemies();
+  }
+
   /**
-   * Death is a pause, not an ending. A1 stands the frog back up where it
-   * started and refills the meadow; A2 swaps this for shrines and the coin
-   * ghost. Without it an unattended slice ends face-down and stays there.
+   * Resting: full heal, and the regular enemies come back with you. Claiming
+   * the shrine moves the checkpoint, so where you last sat down is where death
+   * returns you to.
    */
+  function rest(shrine: Shrine): void {
+    shrine.claim();
+    shrine.pulse();
+    checkpoint = shrine.position.clone();
+    player.respawn(checkpoint);
+    refillEnemies();
+    hud.toast('rested');
+    fx.spawn('shrineRest', shrine.position.clone());
+  }
+
+  function tickShrines(dt: number): void {
+    for (const shrine of shrines) shrine.update(dt, ctx);
+    if (!player.alive || !input.consume('interact')) return;
+    for (const shrine of shrines) {
+      if (!shrine.inRange(player.position)) continue;
+      rest(shrine);
+      return;
+    }
+  }
+
+  /**
+   * Death costs the purse. What you were carrying is left standing where you
+   * fell and you get exactly one walk back to it - dying again while a ghost is
+   * still out there is what loses those coins for good (section 5, DEATH).
+   */
+  function die(): void {
+    const lost = progress.take(DEATH_COIN_DROP);
+    if (ghost !== null) {
+      ghost.dispose();
+      const index = pickups.indexOf(ghost);
+      if (index >= 0) pickups.splice(index, 1);
+      ghost = null;
+    }
+    if (lost > 0) {
+      ghost = createGhost(scene, player.position.clone(), lost);
+      pickups.push(ghost);
+    }
+  }
+
   function tickRespawn(dt: number): void {
     if (player.alive) {
       deadFor = 0;
       return;
     }
+    // The drop happens once, on the frame the frog goes down.
+    if (deadFor === 0) die();
     deadFor += dt;
     if (deadFor < RESPAWN_DELAY) return;
     deadFor = 0;
-    player.respawn(level.playerStart);
-    for (const enemy of enemies) enemy.dispose();
-    enemies.length = 0;
-    spawnEnemies();
+    player.respawn(checkpoint);
+    refillEnemies();
+  }
+
+  function tickPickups(dt: number): void {
+    for (let i = pickups.length - 1; i >= 0; i--) {
+      const pickup = pickups[i];
+      pickup.update(dt, ctx);
+      if (pickup.alive) continue;
+      if (pickup === ghost) ghost = null;
+      pickup.dispose();
+      pickups.splice(i, 1);
+    }
   }
 
   function step(dt: number): void {
@@ -227,6 +339,8 @@ export function createGame(
     player.update(dt, ctx);
     for (const enemy of enemies) enemy.update(dt, ctx);
     cullDead();
+    tickPickups(dt);
+    tickShrines(dt);
     tickRespawn(dt);
 
     // The HUD is told the truth every step and animates toward it on its own
@@ -235,6 +349,9 @@ export function createGame(
     hud.setStamina(player.stamina);
     hud.setHp(player.hp, PLAYER_HP_MAX);
     hud.setZeroStaminaPenalty(player.zeroStaminaPenalty);
+    hud.setCoins(progress.coins);
+    hud.setWeapon(player.weapon);
+    hud.setLockedOn(player.lockedOn);
 
     emit(stepListeners);
   }
@@ -251,7 +368,7 @@ export function createGame(
 
     fx.update(dt);
     hud.update(dt);
-    cameraRig.update(dt, player.position, input.isDown('lockon'));
+    cameraRig.update(dt, player.position, player.lockedOn);
     // The shadow frustum has to be current for the frame being drawn, not the
     // one before it, or the fitted 30x30 box lags the frog by a frame.
     lighting.update(player.position);
@@ -332,6 +449,11 @@ export function createGame(
 
       for (const enemy of enemies) enemy.dispose();
       enemies.length = 0;
+      for (const pickup of pickups) pickup.dispose();
+      pickups.length = 0;
+      ghost = null;
+      for (const shrine of shrines) shrine.dispose();
+      shrines.length = 0;
       player.dispose();
 
       level.dispose();

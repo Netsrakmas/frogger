@@ -14,7 +14,8 @@
  * the world frozen.
  */
 
-import type { Hud, Rng } from '../core/types';
+import type { Hud, Rng, ToastIcon } from '../core/types';
+import type { WeaponId } from '../core/constants';
 import { DEFAULT_SEED, PLAYER_HP_MAX } from '../core/constants';
 import { createRng } from '../core/rng';
 
@@ -73,6 +74,11 @@ const WRITE_EPS = 0.0015;
 // ------------------------------------------------------------- path drawing
 
 const n2 = (value: number): string => value.toFixed(2);
+
+/** How long a pickup acknowledgement stays up before it fades. */
+const TOAST_HOLD = 1.6; // s
+/** Digits per second the purse counts at when it is catching up. */
+const COIN_ROLL = 14;
 
 type Point = [number, number];
 
@@ -197,6 +203,26 @@ stroke-linecap:round;}
 .croak-hud__pip-fill{fill:var(--tongue,#f4846c);}
 .croak-hud__pip-ink{fill:none;stroke:var(--ink,#3a2e28);stroke-width:2.4;
 stroke-linejoin:round;stroke-linecap:round;}
+.croak-hud__purse{width:76%;margin-top:2px;}
+.croak-hud__coin{fill:var(--gold,#f2c14e);}
+.croak-hud__num{fill:none;stroke:var(--ink,#3a2e28);stroke-width:1.5;
+stroke-linejoin:round;stroke-linecap:round;}
+.croak-hud__blade{fill:var(--hero-belly,#f2e8c9);stroke:var(--ink,#3a2e28);
+stroke-width:1.4;stroke-linejoin:round;}
+.croak-hud__haft{fill:var(--stone-shade,#b08d6e);stroke:var(--ink,#3a2e28);
+stroke-width:1.4;stroke-linejoin:round;}
+/* Z-targeting's oldest tell: the frame narrows when you are locked on. */
+.croak-lock{position:fixed;left:0;right:0;height:5.2vh;background:var(--ink,#3a2e28);
+opacity:0;transition:opacity 140ms ease-out,transform 180ms ease-out;
+pointer-events:none;}
+.croak-lock--top{top:0;transform:translateY(-100%);}
+.croak-lock--bottom{bottom:0;transform:translateY(100%);}
+.croak-lock.is-on{opacity:.82;transform:translateY(0);}
+.croak-toast{position:fixed;left:50%;bottom:11vh;transform:translate(-50%,10px);
+width:min(30vw,190px);opacity:0;pointer-events:none;
+transition:opacity 200ms ease-out,transform 200ms ease-out;}
+.croak-toast.is-on{opacity:1;transform:translate(-50%,0);}
+.croak-toast svg{display:block;width:100%;height:auto;overflow:visible;}
 `;
 
 let styleElement: HTMLStyleElement | null = null;
@@ -220,6 +246,59 @@ function releaseStyle(): void {
   styleElement.remove();
   styleElement = null;
 }
+
+/**
+ * A stroked numeral set on a 6x10 box. The build ships no font and rule 12
+ * rules out falling back on the browser's, so every digit the player ever sees
+ * is drawn - angular, to sit with the world's geometry rather than against it.
+ */
+const DIGITS: readonly string[] = [
+  'M1,2L5,2L5,8L1,8Z',
+  'M1.6,3.2L3,2L3,8',
+  'M1,2.6L1.5,2L4.5,2L5,2.6L5,4.3L1,6.2L1,8L5,8',
+  'M1,2L5,2L5,4.9L2.2,4.9L5,4.9L5,8L1,8',
+  'M4.1,8L4.1,2L1,6L5,6',
+  'M5,2L1,2L1,4.9L4.4,4.9L5,5.5L5,7.4L4.4,8L1,8',
+  'M5,2L2,2L1,3.1L1,8L5,8L5,5L1,5',
+  'M1,2L5,2L2.5,8',
+  'M1,2L5,2L5,8L1,8ZM1,5L5,5',
+  'M5,5L1,5L1,2L5,2L5,8L1,8',
+];
+
+const DIGIT_W = 6;
+
+/** Renders `value` as drawn glyphs, left-aligned from `x`. */
+function numerals(value: number, x: number, y: number, scale = 1): string {
+  const text = String(Math.max(0, Math.round(value)));
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const glyph = DIGITS[text.charCodeAt(i) - 48];
+    if (glyph === undefined) continue;
+    out += `<path class="croak-hud__num" transform="translate(${n2(
+      x + i * DIGIT_W * scale,
+    )},${n2(y)}) scale(${n2(scale)})" d="${glyph}"/>`;
+  }
+  return out;
+}
+
+/** Weapon chips. A stick is a stick; a sword has an edge and a guard. */
+const WEAPON_ICON: Record<string, string> = {
+  stick:
+    '<path class="croak-hud__haft" d="M2,13.5L10.5,2.5L12.5,3.6L4.4,14.6Z"/>' +
+    '<path class="croak-hud__haft" d="M9.2,4.6L12,6.2"/>',
+  sword:
+    '<path class="croak-hud__blade" d="M11.6,1.6L13.4,2.6L6.2,13.2L4.4,12.2Z"/>' +
+    '<path class="croak-hud__haft" d="M3.2,10.6L7,12.8L5.6,15L1.8,12.8Z"/>',
+};
+
+const TOAST_ICON: Record<string, string> = {
+  coins: '<circle class="croak-hud__coin" cx="9" cy="9" r="6.4"/>' +
+    '<circle class="croak-hud__num" cx="9" cy="9" r="6.4"/>',
+  weapon: WEAPON_ICON.sword,
+  rested:
+    '<path class="croak-hud__coin" d="M9,1.6C12,5 13.4,7 13.4,9.4' +
+    'C13.4,12.2 11.4,14.4 9,14.4C6.6,14.4 4.6,12.2 4.6,9.4C4.6,7 6,5 9,1.6Z"/>',
+};
 
 const q = <T extends Element>(scope: ParentNode, selector: string): T =>
   scope.querySelector<T>(selector)!;
@@ -437,6 +516,46 @@ export function createHud(parent?: HTMLElement | null, rng?: Rng): Hud {
     pipsDirty = animating;
   }
 
+  // --------------------------------------------------------------- purse
+  // Coins and the weapon in hand, drawn on the same scrap as the bar.
+  const purse = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  purse.setAttribute('class', 'croak-hud__purse');
+  purse.setAttribute('viewBox', '0 0 100 18');
+  root.appendChild(purse);
+
+  /**
+   * The lock letterbox and the toast are screen furniture, not corner
+   * furniture, so they mount beside the panel rather than inside it. dispose()
+   * owns all three.
+   */
+  const lockTop = document.createElement('div');
+  lockTop.className = 'croak-lock croak-lock--top';
+  const lockBottom = document.createElement('div');
+  lockBottom.className = 'croak-lock croak-lock--bottom';
+  const toastEl = document.createElement('div');
+  toastEl.className = 'croak-toast';
+  const toastSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  toastSvg.setAttribute('viewBox', '0 0 100 18');
+  toastEl.appendChild(toastSvg);
+  host.append(lockTop, lockBottom, toastEl);
+
+  let coins = 0;
+  let shownCoins = 0;
+  let weapon: WeaponId = 'stick';
+  let purseDirty = true;
+  let toastLeft = 0;
+
+  function writePurse(): void {
+    if (!purseDirty) return;
+    purseDirty = false;
+    purse.innerHTML =
+      '<circle class="croak-hud__coin" cx="7" cy="9" r="5.4"/>' +
+      '<circle class="croak-hud__num" cx="7" cy="9" r="5.4"/>' +
+      numerals(shownCoins, 16, 4, 1.05) +
+      `<g transform="translate(78,1)">${WEAPON_ICON[weapon] ?? ''}</g>`;
+  }
+
+  writePurse();
   write();
 
   return {
@@ -464,6 +583,32 @@ export function createHud(parent?: HTMLElement | null, rng?: Rng): Hud {
       pipsDirty = true;
     },
 
+    setCoins(count: number): void {
+      const next = Math.max(0, Math.round(count));
+      if (next === coins) return;
+      coins = next;
+    },
+
+    setWeapon(next: WeaponId): void {
+      if (next === weapon) return;
+      weapon = next;
+      purseDirty = true;
+    },
+
+    setLockedOn(active: boolean): void {
+      lockTop.classList.toggle('is-on', active);
+      lockBottom.classList.toggle('is-on', active);
+    },
+
+    toast(icon: ToastIcon, count?: number): void {
+      toastSvg.innerHTML =
+        `<g transform="translate(${count === undefined ? 41 : 24},0)">` +
+        `${TOAST_ICON[icon] ?? ''}</g>` +
+        (count === undefined ? '' : numerals(count, 46, 3, 1.25));
+      toastEl.classList.add('is-on');
+      toastLeft = TOAST_HOLD;
+    },
+
     setZeroStaminaPenalty(active: boolean): void {
       penalty = active;
     },
@@ -471,6 +616,19 @@ export function createHud(parent?: HTMLElement | null, rng?: Rng): Hud {
     update(dt: number): void {
       if (dt > 0) {
         clock += dt;
+
+        // Coins count up rather than snap: a kill's four coins arrive as four
+        // separate events, and the purse should read as filling.
+        if (shownCoins !== coins) {
+          const step = Math.max(1, Math.ceil(Math.abs(coins - shownCoins) * COIN_ROLL * dt));
+          shownCoins += Math.sign(coins - shownCoins) * Math.min(step, Math.abs(coins - shownCoins));
+          purseDirty = true;
+        }
+        if (toastLeft > 0) {
+          toastLeft = Math.max(0, toastLeft - dt);
+          if (toastLeft === 0) toastEl.classList.remove('is-on');
+        }
+        writePurse();
         display += (target - display) * (1 - Math.exp(-BAR_LERP * dt));
 
         if (display >= ghost) {
@@ -495,6 +653,9 @@ export function createHud(parent?: HTMLElement | null, rng?: Rng): Hud {
 
     dispose(): void {
       root.remove();
+      lockTop.remove();
+      lockBottom.remove();
+      toastEl.remove();
       releaseStyle();
     },
   };

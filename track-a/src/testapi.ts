@@ -34,6 +34,45 @@ export function createTestApi(game: Game): TestApi {
   let head = 0;
   let recording = false;
 
+  function enemies() {
+    return ctx.enemies.map((enemy) => ({
+      kind: enemy.kind,
+      state: enemy.state,
+      hp: enemy.hp,
+      facing: enemy.facing,
+      alive: enemy.alive,
+      pos: [enemy.position.x, enemy.position.y, enemy.position.z] as [
+        number,
+        number,
+        number,
+      ],
+    }));
+  }
+
+  function shrines() {
+    return ctx.shrines.map((shrine) => ({
+      id: shrine.id,
+      claimed: shrine.claimed,
+      pos: [shrine.position.x, shrine.position.y, shrine.position.z] as [
+        number,
+        number,
+        number,
+      ],
+    }));
+  }
+
+  function pickupList() {
+    return ctx.pickups.map((pickup) => ({
+      kind: pickup.kind,
+      value: pickup.value,
+      pos: [pickup.position.x, pickup.position.y, pickup.position.z] as [
+        number,
+        number,
+        number,
+      ],
+    }));
+  }
+
   function sample(): GameSample {
     const player = ctx.player;
     const position = player.position;
@@ -58,6 +97,12 @@ export function createTestApi(game: Game): TestApi {
       facing: player.facing,
       grounded: player.controller.grounded,
       enemiesAlive,
+      weapon: player.weapon,
+      lockedOn: player.lockedOn,
+      coins: ctx.progress.coins,
+      pickups: ctx.pickups.length,
+      ghosts: ctx.pickups.filter((pickup) => pickup.kind === 'ghost').length,
+      shrinesClaimed: ctx.shrines.filter((shrine) => shrine.claimed).length,
       trauma: ctx.cameraRig.trauma,
       hitstopRemaining: ctx.loop.hitstopRemaining,
       // Counted for the frame just rendered: three resets these per render(),
@@ -155,5 +200,9 @@ export function createTestApi(game: Game): TestApi {
     teleportPlayer(x: number, y: number, z: number): void {
       ctx.player.controller.teleport(scratch.set(x, y, z));
     },
+
+    enemies,
+    shrines,
+    pickupList,
   };
 }

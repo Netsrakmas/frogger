@@ -168,6 +168,20 @@ const SPORELING_SPOTS: readonly { x: number; z: number }[] = [
  * meadow - and so the greybox never becomes three-on-one against a stick.
  */
 const ACTIVE_SPORELINGS = 1;
+
+/**
+ * A2's authored beats, laid out as a first lesson rather than a scattering:
+ * the shrine sits behind the frog so resting is discovered by walking back;
+ * the Sporeling is met first; the Beetle Guard stands further out, far enough
+ * that you arrive at it having already learned to read a telegraph; and the
+ * Sword is off to one side, so the fight is winnable with the stick but much
+ * better if you went looking first. A4 replaces this with the real zone.
+ */
+const BEETLE_SPOTS: readonly { x: number; z: number }[] = [{ x: -6.0, z: 2.5 }];
+const SHRINE_SPOTS: readonly { id: string; x: number; z: number }[] = [
+  { id: 'downs', x: 1.5, z: 12.5 },
+];
+const SWORD_SPOT = { x: 8.5, z: -1.0 };
 /** Spawns sit a hair proud of the ground so the first ground-snap resolves down. */
 const SPAWN_CLEARANCE = 0.05;
 
@@ -638,6 +652,36 @@ export function createLevel(rng: Rng): Level {
     // yaw 0 faces +Z, matching Object3D.rotation.y on an untransformed mesh.
     yaw: Math.atan2(playerStart.x - spot.x, playerStart.z - spot.z),
   }));
+
+  for (const spot of BEETLE_SPOTS) {
+    spawns.push({
+      type: 'beetleGuard',
+      position: new THREE.Vector3(
+        spot.x,
+        height(spot.x, spot.z) + SPAWN_CLEARANCE,
+        spot.z,
+      ),
+      yaw: Math.atan2(playerStart.x - spot.x, playerStart.z - spot.z),
+    });
+  }
+
+  for (const spot of SHRINE_SPOTS) {
+    spawns.push({
+      type: `shrine:${spot.id}`,
+      position: new THREE.Vector3(spot.x, height(spot.x, spot.z), spot.z),
+      yaw: 0,
+    });
+  }
+
+  spawns.push({
+    type: 'sword',
+    position: new THREE.Vector3(
+      SWORD_SPOT.x,
+      height(SWORD_SPOT.x, SWORD_SPOT.z),
+      SWORD_SPOT.z,
+    ),
+    yaw: 0,
+  });
 
   return {
     root,

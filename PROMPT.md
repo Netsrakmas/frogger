@@ -306,7 +306,7 @@ Track A first to M4, then Track B starts — A's code is the reference for B's f
   (code-generated), move + roll with full §5 numbers, stamina bar, palette-correct
   flat materials, one Sporeling that dies to a placeholder attack. *Gate: playable
   end to end, feel gate on roll, 60 fps, zero errors.*
-- [ ] **A2 — Combat core.** Stick + Sword combos w/ frame data, soft/hard lock-on,
+- [x] **A2 — Combat core.** Stick + Sword combos w/ frame data, soft/hard lock-on,
   magnetism, Sporeling + Beetle Guard FSMs w/ telegraphs, HP/damage, hitstop, trauma
   shake, knockback, squash, death/respawn + coin ghost, shrine rest loop.
   *Gate: feel gate full pass; scripted duel vs both enemies; determinism check.*

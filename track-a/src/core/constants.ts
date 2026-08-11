@@ -102,6 +102,69 @@ export const HITSTOP_LIGHT = f(4);
 export const HITSTOP_HEAVY = f(7);
 export const HITSTOP_KILL = f(7);
 
+// ----------------------------------------------------------------- weapons
+export type WeaponId = 'stick' | 'sword';
+
+export interface WeaponDef {
+  id: WeaponId;
+  label: string;
+  /** One entry per swing of the combo; the last one is the finisher. */
+  swings: readonly AttackFrames[];
+  /** A4's bramble only yields to an edge. */
+  cutsBramble: boolean;
+}
+
+/** Found in hand. Short, quick, and honest about being a stick. */
+const STICK_SWINGS: readonly AttackFrames[] = [
+  LIGHT_ATK,
+  {
+    ...LIGHT_ATK,
+    windup: f(6),
+    recovery: f(14),
+    knockback: 2.4,
+    arc: Math.PI * 0.46,
+    reach: 2.0,
+  },
+];
+
+/** Longer, faster to re-swing, and the third blow actually moves things. */
+const SWORD_SWINGS: readonly AttackFrames[] = [
+  { ...LIGHT_ATK, windup: f(6), recovery: f(11), damage: 2, reach: 2.2 },
+  {
+    ...LIGHT_ATK,
+    windup: f(5),
+    recovery: f(12),
+    damage: 2,
+    knockback: 2.4,
+    reach: 2.3,
+  },
+  {
+    ...HEAVY_ATK,
+    windup: f(9),
+    recovery: f(18),
+    damage: 3,
+    arc: Math.PI * 0.6,
+    reach: 2.5,
+  },
+];
+
+export const WEAPONS: Readonly<Record<WeaponId, WeaponDef>> = {
+  stick: {
+    id: 'stick',
+    label: 'Stick',
+    swings: STICK_SWINGS,
+    cutsBramble: false,
+  },
+  sword: {
+    id: 'sword',
+    label: 'Sword',
+    swings: SWORD_SWINGS,
+    cutsBramble: true,
+  },
+};
+
+export const STARTING_WEAPON: WeaponId = 'stick';
+
 // ------------------------------------------------------------------- shake
 /** Screenshake is trauma-squared, Perlin-driven, ROTATIONAL-ONLY in 3D. */
 export const SHAKE_MAX_OFFSET = 0.4; // u, camera-plane
@@ -155,13 +218,9 @@ export const SFX_PITCH_VARIANCE = 0.06; // +/- 6% on every repeated sound
 
 // ------------------------------------------------------------------ health
 export const PLAYER_HP_MAX = 6;
+/** Coins lost on death, left as a ghost where you fell. You get one try back. */
 export const DEATH_COIN_DROP = 20;
-/**
- * A1 placeholder so death is never terminal: the frog returns to its start and
- * the regular enemies come back, which is the shrine rule minus the shrine. A2
- * replaces this with the real loop - respawn at the last shrine rested at, and
- * the DEATH_COIN_DROP ghost waiting where you fell.
- */
+/** How long the frog lies there before the last shrine takes it back. */
 export const RESPAWN_DELAY = 1.2; // s
 
 // ------------------------------------------------------------------ camera
@@ -208,6 +267,48 @@ export const SPORELING: EnemyStats = {
   damage: 1,
   mass: 'light',
 };
+
+/** Slower, tougher, and it hides behind a shield until you get around it. */
+export const BEETLE_GUARD: EnemyStats = {
+  hp: 5,
+  moveSpeed: 1.8,
+  aggroRange: 9.0,
+  attackRange: 1.8,
+  telegraph: f(44),
+  active: f(10),
+  recovery: f(34),
+  damage: 2,
+  mass: 'medium',
+};
+/**
+ * Half-angle of the shield: a blow landing inside this cone off the guard's
+ * facing is turned aside. A2 answers it by flanking; A3's tongue yank spins the
+ * guard around and opens it from the front (section 4's medium row).
+ */
+export const BEETLE_SHIELD_ARC = (75 * Math.PI) / 180;
+/**
+ * Deliberately slower than the frog can strafe around it at attack range - the
+ * shield is beatable by footwork, and that is the whole lesson of the fight.
+ * It stops turning entirely once committed to a telegraph.
+ */
+export const BEETLE_TURN_RATE = 2.2; // rad/s
+/** A turned blow bounces the attacker instead of hurting the guard. */
+export const BEETLE_BLOCK_KNOCKBACK = 1.6;
+export const BEETLE_BLOCK_TRAUMA = 0.12;
+export const BEETLE_BLOCK_HITSTOP = f(3);
+
+// ------------------------------------------------------------------- coins
+export const COIN_DROP_SPORELING = 4;
+export const COIN_DROP_BEETLE = 9;
+/** Loose coins drift to the frog once it is this close, then land. */
+export const COIN_MAGNET_RANGE = 1.8;
+export const COIN_MAGNET_SPEED = 9.0;
+export const COIN_PICKUP_RANGE = 0.55;
+/** Coins are inert for a beat so a kill's spray cannot be collected mid-air. */
+export const COIN_SETTLE = 0.35;
+
+// ------------------------------------------------------------------ shrines
+export const SHRINE_INTERACT_RANGE = 2.2;
 
 // ------------------------------------------------------------------ physics
 export const PLAYER_RADIUS = 0.36;

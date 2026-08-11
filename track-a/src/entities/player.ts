@@ -20,13 +20,13 @@ import type {
   PlayerStateName,
   Rng,
 } from '../core/types';
-import type { AttackFrames } from '../core/constants';
+import type { AttackFrames, WeaponId } from '../core/constants';
 import {
   ACCEL_TIME,
   COMBO_WINDOW_FROM,
   DECEL_TIME,
   KNOCKBACK_PLAYER,
-  LIGHT_ATK,
+  LOCKON_DROP_RANGE,
   LOCKON_CONE,
   LOCKON_RANGE,
   MAGNETIZE_LUNGE,
@@ -49,7 +49,8 @@ import {
   STAMINA_REGEN_DELAY_EMPTY,
   STAMINA_REGEN_RATE,
   STEP_HEIGHT,
-  STICK_COMBO_LENGTH,
+  STARTING_WEAPON,
+  WEAPONS,
   TICK_DT,
   TRAUMA_HIT,
   TRAUMA_PLAYER_HURT,
@@ -257,6 +258,15 @@ export function createPlayer(
   let speed = 0;
   let comboIndex = 0;
   let comboQueued = false;
+  let weapon = STARTING_WEAPON;
+  let swings = WEAPONS[weapon].swings;
+  /**
+   * Hard lock. Soft lock (pickTarget) is always on and only steers a swing;
+   * this one is held until dropped and changes how the frog moves - it strafes
+   * instead of turning into the stick, which is what makes circling a shield
+   * something you can actually aim.
+   */
+  let lockTarget: Damageable | null = null;
   let lungeLeft = 0;
   let lungeSpeed = 0;
   let knockSpeed = 0;
@@ -281,6 +291,10 @@ export function createPlayer(
   const swung = new Set<Damageable>();
 
   const alive = (): boolean => state !== 'dead';
+
+  /** Frame data for the swing in flight; the last entry is the finisher. */
+  const swing = (): AttackFrames =>
+    swings[Math.min(comboIndex, swings.length - 1)];
 
   const inRollIframes = (): boolean =>
     state === 'roll' &&
@@ -319,7 +333,15 @@ export function createPlayer(
     return magnitude;
   }
 
-  function pickTarget(ctx: GameContext): Damageable | null {
+  /**
+   * Nearest valid enemy. `anyDirection` is for acquiring a hard lock, where
+   * demanding the frog already face the thing it wants to look at is a fight
+   * with the player; a swing's soft lock keeps the cone.
+   */
+  function pickTarget(
+    ctx: GameContext,
+    anyDirection = false,
+  ): Damageable | null {
     let best: Damageable | null = null;
     let bestDistance = Infinity;
     for (const target of ctx.damageablesFor('player')) {
@@ -328,7 +350,7 @@ export function createPlayer(
       const dz = target.position.z - controller.position.z;
       const distance = Math.hypot(dx, dz);
       if (distance > LOCKON_RANGE || distance >= bestDistance) continue;
-      if (distance > TOUCHING) {
+      if (!anyDirection && distance > TOUCHING) {
         const off = Math.abs(wrapAngle(Math.atan2(dx, dz) - facing));
         if (off > LOCKON_CONE) continue;
       }
@@ -386,6 +408,18 @@ export function createPlayer(
     }
   }
 
+  /** A lock survives only while its target is alive, present and in reach. */
+  function updateLock(): void {
+    if (lockTarget === null) return;
+    if (!lockTarget.alive) {
+      lockTarget = null;
+      return;
+    }
+    const dx = lockTarget.position.x - controller.position.x;
+    const dz = lockTarget.position.z - controller.position.z;
+    if (Math.hypot(dx, dz) > LOCKON_DROP_RANGE) lockTarget = null;
+  }
+
   function enterIdle(): void {
     state = 'idle';
     stateTime = 0;
@@ -426,22 +460,24 @@ export function createPlayer(
     freshEntry = true;
     comboIndex = index;
     comboQueued = false;
+    const frames = swings[Math.min(index, swings.length - 1)];
     speed = 0;
     swung.clear();
 
-    const target = pickTarget(ctx);
+    const target =
+      lockTarget !== null && lockTarget.alive ? lockTarget : pickTarget(ctx);
     if (target !== null) {
       const dx = target.position.x - controller.position.x;
       const dz = target.position.z - controller.position.z;
       facing = Math.atan2(dx, dz);
-      const gap = Math.hypot(dx, dz) - LIGHT_ATK.reach;
+      const gap = Math.hypot(dx, dz) - frames.reach;
       lungeLeft = Math.max(0, Math.min(gap, MAGNETIZE_LUNGE));
     } else {
       if (magnitude > 0) facing = Math.atan2(moveDir.x, moveDir.z);
       lungeLeft = 0;
     }
     // The lunge is spent by the time the swing lands, never during recovery.
-    lungeSpeed = lungeLeft / (LIGHT_ATK.windup + LIGHT_ATK.active);
+    lungeSpeed = lungeLeft / (frames.windup + frames.active);
   }
 
   function enterHitstun(): void {
@@ -475,10 +511,17 @@ export function createPlayer(
   function claimVerbs(ctx: GameContext, magnitude: number): void {
     if (state === 'dead') return;
 
-    const recoveryAt = LIGHT_ATK.windup + LIGHT_ATK.active;
+    // Toggle, not hold: a lock you have to keep a finger on competes with every
+    // other verb on the hand.
+    if (ctx.input.consume('lockon')) {
+      lockTarget = lockTarget === null ? pickTarget(ctx, true) : null;
+    }
+
+    const active = swing();
+    const recoveryAt = active.windup + active.active;
     const canRollFromAttack =
       state === 'attack' &&
-      stateTime >= recoveryAt + LIGHT_ATK.rollCancelFrom - TIME_EPS;
+      stateTime >= recoveryAt + active.rollCancelFrom - TIME_EPS;
 
     if (state === 'idle' || state === 'move' || canRollFromAttack) {
       if (ctx.input.consume('roll')) {
@@ -495,7 +538,7 @@ export function createPlayer(
     if (
       state === 'attack' &&
       !comboQueued &&
-      comboIndex + 1 < STICK_COMBO_LENGTH &&
+      comboIndex + 1 < swings.length &&
       stateTime >= COMBO_WINDOW_FROM - TIME_EPS
     ) {
       if (ctx.input.consume('attack')) comboQueued = true;
@@ -510,7 +553,17 @@ export function createPlayer(
     } else {
       speed = Math.max(target, speed - (MOVE_SPEED / DECEL_TIME) * dt);
     }
-    if (magnitude > 0) turnToward(Math.atan2(moveDir.x, moveDir.z), dt);
+    // Locked on, the frog keeps its eyes on the target and side-steps; free,
+    // it turns into whichever way the stick is pointing.
+    if (lockTarget !== null) {
+      const dx = lockTarget.position.x - controller.position.x;
+      const dz = lockTarget.position.z - controller.position.z;
+      if (Math.abs(dx) + Math.abs(dz) > TOUCHING) {
+        turnToward(Math.atan2(dx, dz), dt);
+      }
+    } else if (magnitude > 0) {
+      turnToward(Math.atan2(moveDir.x, moveDir.z), dt);
+    }
     velocity.set(moveDir.x * speed, 0, moveDir.z * speed);
   }
 
@@ -548,8 +601,8 @@ export function createPlayer(
       }
 
       case 'attack': {
-        if (stateTime >= attackLength(LIGHT_ATK) - TIME_EPS) {
-          if (comboQueued && comboIndex + 1 < STICK_COMBO_LENGTH) {
+        if (stateTime >= attackLength(swing()) - TIME_EPS) {
+          if (comboQueued && comboIndex + 1 < swings.length) {
             enterAttack(ctx, comboIndex + 1, magnitude);
           } else {
             if (magnitude > 0) enterMove();
@@ -566,10 +619,11 @@ export function createPlayer(
           velocity.set(Math.sin(facing) * lunge, 0, Math.cos(facing) * lunge);
         }
 
-        const activeFrom = LIGHT_ATK.windup;
-        const activeTo = LIGHT_ATK.windup + LIGHT_ATK.active;
+        const frames = swing();
+        const activeFrom = frames.windup;
+        const activeTo = frames.windup + frames.active;
         if (stateTime >= activeFrom - TIME_EPS && stateTime < activeTo - TIME_EPS) {
-          strike(ctx, LIGHT_ATK);
+          strike(ctx, frames);
         }
         break;
       }
@@ -695,6 +749,24 @@ export function createPlayer(
     },
     takeHit,
 
+    get weapon(): WeaponId {
+      return weapon;
+    },
+    get lockTarget(): Damageable | null {
+      return lockTarget;
+    },
+    get lockedOn(): boolean {
+      return lockTarget !== null;
+    },
+
+    equip(next: WeaponId): void {
+      weapon = next;
+      swings = WEAPONS[next].swings;
+      // A weapon that arrives mid-combo must not inherit the old one's index.
+      comboIndex = 0;
+      comboQueued = false;
+    },
+
     respawn(at: THREE.Vector3): void {
       controller.teleport(at);
       hp = PLAYER_HP_MAX;
@@ -707,6 +779,7 @@ export function createPlayer(
       squash = 1;
       velocity.set(0, 0, 0);
       swung.clear();
+      lockTarget = null;
       // A beat of grace, so a respawn cannot hand the frog straight back into
       // a blow it never had the frames to read.
       invulnUntil = now + PLAYER_IFRAMES_AFTER_HIT;
@@ -716,6 +789,7 @@ export function createPlayer(
     update(dt: number, ctx: GameContext): void {
       ctxRef = ctx;
       now += dt;
+      updateLock();
       if (freshEntry) freshEntry = false;
       else stateTime += dt;
 
