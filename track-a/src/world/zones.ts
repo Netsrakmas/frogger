@@ -8,11 +8,18 @@
 import type { Level, Rng, ZoneId } from '../core/types';
 import { createDowns } from './level';
 import { createBelfry } from './belfry';
+import { createArena } from './arena';
 
 export function createZone(rng: Rng, zone: ZoneId): Level {
   // Each zone forks its own stream, so the belfry's glow placement can never
   // shift the meadow's tree placement (section 10's determinism gate).
-  return zone === 'belfry'
-    ? createBelfry(rng.fork('zone:belfry'))
-    : createDowns(rng.fork('zone:downs'));
+  switch (zone) {
+    case 'belfry':
+      return createBelfry(rng.fork('zone:belfry'));
+    case 'arena':
+      return createArena(rng.fork('zone:arena'));
+    case 'downs':
+    default:
+      return createDowns(rng.fork('zone:downs'));
+  }
 }

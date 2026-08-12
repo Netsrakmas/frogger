@@ -28,6 +28,7 @@ import type {
   TongueOutcome,
 } from '../core/types';
 import {
+  GRAPPLE_MIN_RANGE,
   TONGUE_EXTEND_SPEED,
   TONGUE_OVERSHOOT,
   TONGUE_RANGE,
@@ -155,6 +156,10 @@ export function pickTongueTarget(
     consider(enemy.position, () => ({ kind: 'enemy', enemy, position: enemy.position }), 0.8);
   }
   for (const post of ctx.grapplePosts) {
+    // You cannot grapple the thing you are standing on. See GRAPPLE_MIN_RANGE.
+    const dx = post.position.x - from.x;
+    const dz = post.position.z - from.z;
+    if (Math.hypot(dx, dz) < GRAPPLE_MIN_RANGE) continue;
     consider(post.position, () => ({ kind: 'post', post, position: post.position }), 0.8);
   }
   // Levers outrank everything: a lever is only ever placed where the player

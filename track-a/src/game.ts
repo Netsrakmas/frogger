@@ -34,6 +34,8 @@ import type {
 } from './core/types';
 import {
   DEATH_COIN_DROP,
+  HERON,
+  PAGE_TOTAL,
   SECRET_COINS,
   DEFAULT_SEED,
   PLAYER_HP_MAX,
@@ -54,6 +56,7 @@ import { createSporeling } from './entities/sporeling';
 import { createBeetleGuard } from './entities/beetle';
 import { createSpitterFly } from './entities/spitter';
 import { createDrownedKnight } from './entities/knight';
+import { createHeron } from './entities/heron';
 import { createToken } from './entities/pickup';
 import { createGate } from './world/gate';
 import { createCoin, createGhost, createWeaponPickup } from './entities/pickup';
@@ -90,6 +93,26 @@ const ENEMY_FACTORIES: Record<string, EnemyFactory | undefined> = {
   beetleGuard: createBeetleGuard,
   spitterFly: createSpitterFly,
   drownedKnight: createDrownedKnight,
+  heron: createHeron,
+};
+
+/**
+ * Which door leads where. A transition is authored data, not a special case
+ * buried in the tick: a door is a way through only if this table says so, and
+ * both zones name the arrival point the other one uses.
+ */
+interface Doorway {
+  gate: string;
+  to: ZoneId;
+  entry: string;
+}
+
+const DOORWAYS: Record<ZoneId, readonly Doorway[]> = {
+  downs: [{ gate: 'belfry', to: 'belfry', entry: 'downs' }],
+  // The vault door the sluice puzzle opens is the way up onto the roof.
+  belfry: [{ gate: 'vault', to: 'arena', entry: 'belfry' }],
+  // The arena is the end of the demo. There is nowhere else to be.
+  arena: [],
 };
 
 export function createGame(
@@ -141,9 +164,17 @@ export function createGame(
       const spawn = level.spawns[i];
       const make = ENEMY_FACTORIES[spawn.type];
       if (make === undefined) continue;
-      enemies.push(
-        make(scene, level, spawn.position, rng.fork(`spawn:${level.id}:${spawn.type}:${i}`)),
+      // A shrine refills a zone, and after the win that must not put the Heron
+      // back on its feet - resting in a cleared arena is a rest, not a rematch.
+      if (spawn.type === 'heron' && victory) continue;
+      const enemy = make(
+        scene,
+        level,
+        spawn.position,
+        rng.fork(`spawn:${level.id}:${spawn.type}:${i}`),
       );
+      enemies.push(enemy);
+      if (spawn.type === 'heron') boss = enemy;
     }
   }
   /** The ghost currently owed to the player. Dying again abandons it for good. */
@@ -152,6 +183,9 @@ export function createGame(
   const pages: number[] = [];
   let keys = 0;
   let hasShield = false;
+  /** The Heron, while it is standing. The HUD and the ending both read it. */
+  let boss: Enemy | null = null;
+  let victory = false;
 
   /** Everything in a zone that is not an enemy. Torn down by teardownWorld. */
   function spawnProps(): void {
@@ -204,11 +238,11 @@ export function createGame(
   /** Queued so a zone never changes underneath a loop that is still walking it. */
   let pendingZone: { zone: ZoneId; entry: string } | null = null;
   /**
-   * Set on arrival and cleared once the frog has walked clear of the doorway.
-   * Without it you arrive on top of the trigger you just used and bounce
-   * straight back through it.
+   * Doorways the frog has walked clear of since they opened. Without this you
+   * arrive on top of the trigger you just used and bounce straight back
+   * through it.
    */
-  let transitionArmed = false;
+  const armedDoorways = new Set<string>();
 
   const progress: Progress = {
     get coins(): number {
@@ -290,6 +324,33 @@ export function createGame(
     changeZone(zone: ZoneId, entry: string): void {
       if (level.id === zone) return;
       pendingZone = { zone, entry };
+    },
+
+    get boss(): Enemy | null {
+      return boss;
+    },
+
+    setBoss(enemy: Enemy | null): void {
+      boss = enemy;
+    },
+
+    get victory(): boolean {
+      return victory;
+    },
+
+    /**
+     * The Heron is down. The reward is not a menu: the last manual page appears
+     * on the ledge behind the arena - somewhere the player has been able to
+     * walk the whole time and has had no reason to - and the tally card comes
+     * up without taking the frame, so going and getting it is still playable.
+     */
+    declareVictory(): void {
+      if (victory) return;
+      victory = true;
+      const spot = level.entries.victoryPage;
+      if (spot !== undefined) {
+        pickups.push(createToken(scene, spot.clone(), 'page', PAGE_TOTAL - 1));
+      }
     },
 
     dropCoins(amount: number, position: THREE.Vector3): void {
@@ -380,6 +441,7 @@ export function createGame(
    */
   function applyZoneChange(zone: ZoneId, entry: string): void {
     teardownWorld();
+    boss = null;
     level.dispose();
 
     level = createZone(rng, zone);
@@ -390,25 +452,39 @@ export function createGame(
     const arrival = level.entries[entry] ?? level.playerStart;
     checkpoint = arrival.clone();
     player.respawn(arrival);
-    transitionArmed = false;
+    armedDoorways.clear();
   }
 
   /**
    * Doors are two-way once open. Standing in one sends you through; you have to
    * step off it before it will take you again.
+   *
+   * ARMING IS PER DOOR, AND A SHUT DOOR NEVER ARMS. Both halves matter. A
+   * single shared flag armed by "no open door in reach" means the frame a key
+   * turns is the frame you are thrown through the door you were standing at to
+   * unlock it: you never see it open, and a scripted walkthrough reads it as
+   * still locked because it is already in the next zone asking the wrong world.
+   * Keying the flag on the door itself also stops one open door across the map
+   * from arming a different one under the frog's feet.
    */
   function tickTransitions(): void {
     if (!player.alive) return;
-    const door = gates.find((gate) => gate.id === 'belfry' && gate.open);
-    if (door === undefined) return;
-    const near = door.inRange(player.position);
-    if (!near) {
-      transitionArmed = true;
+    for (const doorway of DOORWAYS[level.id]) {
+      const door = gates.find((gate) => gate.id === doorway.gate);
+      if (door === undefined) continue;
+      if (!door.open) {
+        armedDoorways.delete(doorway.gate);
+        continue;
+      }
+      if (!door.inRange(player.position)) {
+        armedDoorways.add(doorway.gate);
+        continue;
+      }
+      if (!armedDoorways.has(doorway.gate)) continue;
+      armedDoorways.delete(doorway.gate);
+      ctx.changeZone(doorway.to, doorway.entry);
       return;
     }
-    if (!transitionArmed) return;
-    transitionArmed = false;
-    ctx.changeZone(level.id === 'downs' ? 'belfry' : 'downs', level.id === 'downs' ? 'downs' : 'belfry');
   }
 
   function refillEnemies(): void {
@@ -523,6 +599,11 @@ export function createGame(
     hud.setCoins(progress.coins);
     hud.setWeapon(player.weapon);
     hud.setLockedOn(player.lockedOn);
+    // Told every step rather than on a change: the bar has to survive a zone
+    // swap, a death and a rest without anyone remembering to put it back.
+    if (boss !== null && boss.alive) hud.setBoss(boss.kind, boss.hp, HERON.hp);
+    else hud.setBoss('', 0, 0);
+    if (victory) hud.showEnding(progress.pages.length, PAGE_TOTAL);
 
     emit(stepListeners);
   }

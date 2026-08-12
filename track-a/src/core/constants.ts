@@ -207,6 +207,14 @@ export const BLOCK_MOVE_SCALE = 0.45;
 
 // ------------------------------------------------------------------ tongue
 export const TONGUE_RANGE = 7.0; // u
+/**
+ * A grapple post nearer than this is one the frog is already standing at, and
+ * a tongue thrown from it is being thrown AT something else. Without this the
+ * post you just hauled to sits a metre away, directly between you and whatever
+ * you were reaching for, and wins the aim every time - which is exactly what
+ * made the Heron unreachable from its own arena's posts.
+ */
+export const GRAPPLE_MIN_RANGE = 2.0; // u
 export const TONGUE_EXTEND_SPEED = 35.0; // u/s
 export const TONGUE_RETRACT_SPEED = 25.0; // u/s
 export const TONGUE_WHIFF_RECOVERY = f(15);
@@ -384,6 +392,85 @@ export const DROWNED_KNIGHT: EnemyStats = {
 export const KNIGHT_FOLLOWUP_GAP = f(16);
 export const KNIGHT_TURN_RATE = 3.2; // rad/s
 export const COIN_DROP_KNIGHT = 11;
+
+/**
+ * The Heron. A frog's natural nightmare, and the only heavy thing in the game -
+ * so the tongue anchors to it and pulls the FROG, which is what makes phase two
+ * a traversal problem rather than a damage race.
+ */
+export const HERON: EnemyStats = {
+  hp: 30,
+  moveSpeed: 3.4,
+  aggroRange: 40.0,
+  attackRange: 4.2,
+  telegraph: f(40),
+  active: f(10),
+  recovery: f(34),
+  damage: 2,
+  mass: 'heavy',
+};
+/** Phase thresholds, as a fraction of full health. */
+export const HERON_PHASE_2 = 0.66;
+export const HERON_PHASE_3 = 0.33;
+/** Phase 3 is faster, but never below the honest floor. */
+export const HERON_HASTE = 0.72;
+/**
+ * No wind-up in the fight may be shorter than this, whatever the haste
+ * multiplier works out to (section 6 asks for >= 36 f on every telegraph, and
+ * HERON.telegraph * HERON_HASTE lands under it). Desperation makes the boss
+ * faster between blows, never less readable inside one.
+ */
+export const HERON_TELEGRAPH_FLOOR = f(36);
+/** The dive: the longest tell in the game, and the biggest punish window. */
+export const HERON_DIVE_TELEGRAPH = f(90);
+export const HERON_DIVE_STUN = 3.0; // s
+export const HERON_DIVE_DAMAGE = 3;
+/**
+ * How much of the dive tell is spent still tracking, before it commits.
+ *
+ * This number and HERON_DIVE_RADIUS together decide whether the dive can be
+ * dodged AT ALL, and the first pair chosen could not: locking the target at
+ * 60% of a 90 f tell left 0.6 s of running, which is 3.0 u at MOVE_SPEED, and
+ * the blast was 3.4 u wide. The frog could see it coming, run flat out, and
+ * still be inside it. Committing earlier and hitting slightly narrower turns
+ * the biggest attack in the game back into a question with an answer.
+ */
+export const HERON_DIVE_COMMIT = 0.45;
+export const HERON_DIVE_RADIUS = 3.0; // u
+/** The wing gust: a radial shove, not a killer. It is there to move you. */
+export const HERON_GUST_RANGE = 6.4; // u
+export const HERON_GUST_DAMAGE = 1;
+export const HERON_GUST_KNOCKBACK = 3.4; // u
+/** Phase 2: it takes the middle and the wind pushes everything outward. */
+export const HERON_WIND_PUSH = 3.6; // u/s at the rim
+/**
+ * The gust scales UP toward the middle, so the last few metres cannot be
+ * walked at MOVE_SPEED at all. That is the whole design of phase two: the way
+ * in is the tongue, and the posts are the rungs.
+ */
+export const HERON_WIND_CENTRE = 2.4; // x, at the arena's middle
+export const HERON_HOVER = 1.75; // u off the deck while it holds the middle
+export const HERON_FEATHERS = 5;
+export const FEATHER_SPEED = 8.0;
+export const FEATHER_RANGE = 18.0;
+export const FEATHER_DAMAGE = 1;
+export const FEATHER_RADIUS = 0.17; // u
+/** Fan angle between adjacent feathers in a volley. */
+export const FEATHER_SPREAD = 0.26; // rad
+export const COIN_DROP_HERON = 60;
+
+/** The flooded rooftop. Gameplay reads it (the wind), so it lives here. */
+export const ARENA_RADIUS = 13.0; // u
+/**
+ * Inside the stall radius on purpose. With HERON_WIND_CENTRE as it is, a frog
+ * walking in at MOVE_SPEED comes to a dead stop around 9.4 u out - so the posts
+ * cannot be walked to either. They are reached the only way anything is reached
+ * in that phase: with the tongue.
+ */
+export const ARENA_POST_RING = 4.6; // u
+
+/** Manual pages placed across the whole demo (section 7). */
+export const PAGE_TOTAL = 4;
 
 // ------------------------------------------------------------------- coins
 export const COIN_DROP_SPORELING = 4;

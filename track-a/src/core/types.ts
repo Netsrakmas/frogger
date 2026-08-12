@@ -101,7 +101,7 @@ export interface SecretSpot {
 }
 
 /** The demo has two: the meadow you start in and the tower under it. */
-export type ZoneId = 'downs' | 'belfry';
+export type ZoneId = 'downs' | 'belfry' | 'arena';
 
 export interface Level {
   readonly id: ZoneId;
@@ -341,7 +341,10 @@ export type FxKind =
   /** Bramble giving way to an edge. */
   | 'brambleCut'
   /** Arrival slash at the end of a grapple pull - the Death's Door move. */
-  | 'lungeSlash';
+  | 'lungeSlash'
+  /** The Heron's dive slamming into the arena floor. */
+  | 'heronSlam'
+  | 'featherBurst';
 
 // ------------------------------------------------------------------------ ui
 
@@ -355,6 +358,10 @@ export interface Hud {
   setCoins(count: number): void;
   setWeapon(weapon: WeaponId): void;
   setLockedOn(active: boolean): void;
+  /** The boss bar. `max` of 0 hides it. */
+  setBoss(name: string, current: number, max: number): void;
+  /** The end of the demo: pages found out of the total placed. */
+  showEnding(pages: number, total: number): void;
   /**
    * A drawn acknowledgement that fades: what you got, and how many. Icons and
    * numerals only - the build ships no font, and the world does the teaching.
@@ -395,6 +402,12 @@ export interface GameContext {
   spawnFx(kind: FxKind, position: THREE.Vector3, dir?: THREE.Vector3): void;
   /** Scatter `amount` coins at `position` - how a dying enemy pays out. */
   dropCoins(amount: number, position: THREE.Vector3): void;
+  /** Set by the boss so the HUD and the ending can read it. Null when none. */
+  readonly boss: Enemy | null;
+  setBoss(enemy: Enemy | null): void;
+  /** The demo is over and won. */
+  readonly victory: boolean;
+  declareVictory(): void;
   /** Every Damageable that can receive a player hit right now. */
   damageablesFor(source: 'player' | 'enemy'): Damageable[];
 }
@@ -427,6 +440,9 @@ export interface GameSample {
   keys: number;
   hasShield: boolean;
   blocking: boolean;
+  bossHp: number;
+  bossPhase: number;
+  victory: boolean;
   gatesOpen: number;
   zone: ZoneId;
   trauma: number;

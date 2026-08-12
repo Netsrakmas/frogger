@@ -214,8 +214,12 @@ chest + shrine + boss door. 1 manual page. Skeletal frog knights (this belfry is
 where the old frog knights drowned) + spore enemies.
 
 **Zone 3 — Boss: The Heron of the Sunken Belfry.** A frog's natural nightmare, huge,
-elegant, dungeonGlow-eyed. Arena: circular flooded rooftop, 4 grapple posts around
-the rim. 3 phases: (1) spear-beak stabs + wing gusts, telegraphed ≥36 f; (2) flies to
+elegant, dungeonGlow-eyed. Arena: circular flooded rooftop, 4 grapple posts.
+**Amended in A6:** the posts sit on an *inner* ring (`ARENA_POST_RING`), not on the
+rim as first drafted. Phase 2's wind blows outward, so rungs on the rim are rungs in
+the direction you are already being pushed — they have to stand inside the radius
+where the gust beats `MOVE_SPEED` or the phase has no answer at all.
+3 phases: (1) spear-beak stabs + wing gusts, telegraphed ≥36 f; (2) flies to
 arena center, wind pushes outward, player must grapple-chain posts to reach and
 strike; (3) desperation — faster stabs, feather volleys, one 90 f-telegraph dive that
 leaves it stunned 3 s if dodged. Boss HP visible; killing it rolls demo credits +
@@ -340,7 +344,7 @@ Track A first to M4, then Track B starts — A's code is the reference for B's f
 - [x] **A5 — The Sunken Belfry.** 3 floors, water-level puzzle, Drowned Knight,
   Shield + block, dungeon palette/lighting recipe, 1 page. *Gate: dungeon clearable
   scripted + by hand; palette identity screenshot pair (overworld vs dungeon).*
-- [ ] **A6 — The Heron.** 3-phase boss per §6, boss HP UI, credits + tally, final
+- [x] **A6 — The Heron.** 3-phase boss per §6, boss HP UI, credits + tally, final
   page. *Gate: boss beatable by script (with generous timings) and by hand; every
   attack telegraph ≥36 f verified; phase-2 grapple loop works.*
 - [ ] **A7 — Manual + Croakic.** Booklet UI, 4 authored pages (canvas-drawn NES

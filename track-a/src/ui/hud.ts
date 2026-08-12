@@ -36,6 +36,17 @@ const WELL_W = 226;
 const WELL_H = 17;
 const WELL_CORNER = 8;
 
+/** The boss bar's own user-space box. Wider and shallower than the stamina bar. */
+const BOSS_W = 420;
+const BOSS_H = 34;
+/** Left inset of the well, leaving room for the sigil that names the fight. */
+const BOSS_WELL_X = 40;
+
+/** The ending card: the demo's tally, drawn rather than written. */
+const END_W = 220;
+const END_H = 76;
+const END_SLOT_W = 26;
+
 const PIP_ROW_W = 240;
 const PIP_ROW_H = 40;
 const PIP_ROW_PAD = 6;
@@ -223,6 +234,23 @@ width:min(30vw,190px);opacity:0;pointer-events:none;
 transition:opacity 200ms ease-out,transform 200ms ease-out;}
 .croak-toast.is-on{opacity:1;transform:translate(-50%,0);}
 .croak-toast svg{display:block;width:100%;height:auto;overflow:visible;}
+/* The boss bar. Same paper, but across the top and twice the width: the one
+   thing on screen that is about something other than the frog. */
+.croak-boss{position:fixed;left:50%;top:calc(3.4vh + env(safe-area-inset-top,0px));
+width:min(54vw,540px);opacity:0;transform:translate(-50%,-10px);pointer-events:none;
+transition:opacity 260ms ease-out,transform 260ms ease-out;}
+.croak-boss.is-on{opacity:1;transform:translate(-50%,0);}
+.croak-boss svg{display:block;width:100%;height:auto;overflow:visible;}
+.croak-boss__fill{fill:var(--tongue,#f4846c);}
+.croak-boss__sigil{fill:var(--ink,#3a2e28);}
+/* The ending card. It does NOT cover the game: the last page is still out
+   there behind the arena, and a player who wants it must be able to go. */
+.croak-ending{position:fixed;left:50%;bottom:6vh;width:min(46vw,420px);
+opacity:0;transform:translate(-50%,24px);pointer-events:none;
+transition:opacity 700ms ease-out,transform 700ms ease-out;}
+.croak-ending.is-on{opacity:1;transform:translate(-50%,0);}
+.croak-ending svg{display:block;width:100%;height:auto;overflow:visible;}
+.croak-ending__slot{fill:var(--stone-shade,#b08d6e);opacity:.35;}
 `;
 
 let styleElement: HTMLStyleElement | null = null;
@@ -309,6 +337,18 @@ const TOAST_ICON: Record<string, string> = {
   rested:
     '<path class="croak-hud__coin" d="M9,1.6C12,5 13.4,7 13.4,9.4' +
     'C13.4,12.2 11.4,14.4 9,14.4C6.6,14.4 4.6,12.2 4.6,9.4C4.6,7 6,5 9,1.6Z"/>',
+};
+
+/**
+ * Who the bar belongs to, drawn as a mark rather than named in letters (rule
+ * 12). The Heron's is its own silhouette: the long neck and the spear beak,
+ * which is exactly the shape the player has just spent the fight reading.
+ */
+const BOSS_SIGIL: Record<string, string> = {
+  heron:
+    '<path class="croak-boss__sigil" d="M3,19C3,12 6.6,7 11.4,5.4' +
+    'C10.6,3 11.8,1 13.8,1C15.6,1 16.8,2.4 16.6,4.2L25,7.2L16.4,7.8' +
+    'C16,11 13.6,13.2 10.6,13.6C9.4,15.6 9,17.4 9,19Z"/>',
 };
 
 const q = <T extends Element>(scope: ParentNode, selector: string): T =>
@@ -548,7 +588,55 @@ export function createHud(parent?: HTMLElement | null, rng?: Rng): Hud {
   const toastSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   toastSvg.setAttribute('viewBox', '0 0 100 18');
   toastEl.appendChild(toastSvg);
-  host.append(lockTop, lockBottom, toastEl);
+
+  // ------------------------------------------------------------- boss bar
+  // Drawn once at build time with the same pen as the stamina frame, so the
+  // two read as the same hand rather than as two different UI kits.
+  const bossFrame = smoothClosed(
+    jitter(ink, roundedRect(2, 2, BOSS_W - 4, BOSS_H - 4, 9), WOBBLE_FRAME),
+  );
+  const bossWell = smoothClosed(
+    jitter(
+      ink,
+      roundedRect(BOSS_WELL_X, 6, BOSS_W - BOSS_WELL_X - 7, BOSS_H - 12, 6),
+      WOBBLE_FRAME * 0.5,
+    ),
+  );
+  const bossEl = document.createElement('div');
+  bossEl.className = 'croak-boss';
+  bossEl.innerHTML = `
+<svg viewBox="0 0 ${BOSS_W} ${BOSS_H}" aria-hidden="true">
+  <defs><clipPath id="${uid}-boss"><path d="${bossWell}"/></clipPath></defs>
+  <path class="croak-hud__print" transform="translate(1.8,2.8)" d="${bossFrame}"/>
+  <path class="croak-hud__paper" d="${bossFrame}"/>
+  <path class="croak-hud__grain" d="${bossFrame}" fill="url(#${uid}-dots)"/>
+  <path class="croak-hud__well" d="${bossWell}"/>
+  <g clip-path="url(#${uid}-boss)">
+    <rect class="croak-boss__fill" x="0" y="0" width="0" height="${BOSS_H}"/>
+  </g>
+  <path class="croak-hud__ink" d="${bossFrame}"/>
+  <g class="croak-boss__sigil-slot" transform="translate(10,7)"></g>
+</svg>`;
+
+  const endFrame = smoothClosed(
+    jitter(ink, roundedRect(2, 2, END_W - 4, END_H - 4, 8), WOBBLE_FRAME),
+  );
+  const endingEl = document.createElement('div');
+  endingEl.className = 'croak-ending';
+  const endingSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  endingSvg.setAttribute('viewBox', `0 0 ${END_W} ${END_H}`);
+  endingEl.appendChild(endingSvg);
+
+  host.append(lockTop, lockBottom, toastEl, bossEl, endingEl);
+
+  const bossFill = q<SVGRectElement>(bossEl, '.croak-boss__fill');
+  const bossSigil = q<SVGGElement>(bossEl, '.croak-boss__sigil-slot');
+  const bossWellX = BOSS_WELL_X;
+  const bossWellW = BOSS_W - BOSS_WELL_X - 7;
+
+  let bossName = '';
+  let bossShown = -1;
+  let endingShown = '';
 
   let coins = 0;
   let shownCoins = 0;
@@ -611,6 +699,67 @@ export function createHud(parent?: HTMLElement | null, rng?: Rng): Hud {
       lockBottom.classList.toggle('is-on', active);
     },
 
+    /**
+     * The boss bar. `max` of 0 is how a fight ends as well as how it has not
+     * started: the bar leaves the moment there is nothing left to measure.
+     */
+    setBoss(name: string, current: number, max: number): void {
+      if (max <= 0) {
+        bossEl.classList.remove('is-on');
+        bossShown = -1;
+        return;
+      }
+      if (name !== bossName) {
+        bossName = name;
+        bossSigil.innerHTML = BOSS_SIGIL[name] ?? '';
+      }
+      bossEl.classList.add('is-on');
+      const fraction = Math.max(0, Math.min(1, current / max));
+      const width = bossWellX + fraction * bossWellW;
+      if (Math.abs(width - bossShown) <= WRITE_EPS) return;
+      bossShown = width;
+      bossFill.setAttribute('width', n2(width));
+    },
+
+    /**
+     * The end of the demo: the Heron struck through, and one slot per manual
+     * page with the ones you actually found coloured in. It sits at the bottom
+     * of the screen and takes no input, because the fourth page is still out
+     * there behind the arena and a card that stole the frame would be a card
+     * that told the player the game was over when it was not.
+     */
+    showEnding(found: number, total: number): void {
+      const slots = Math.max(1, Math.round(total));
+      const key = `${Math.max(0, Math.round(found))}/${slots}`;
+      if (key === endingShown) return;
+      endingShown = key;
+
+      const row = END_W - 24;
+      const step = Math.min(END_SLOT_W + 8, row / slots);
+      const left = (END_W - step * slots) * 0.5;
+      let markup =
+        `<path class="croak-hud__print" transform="translate(2,3)" d="${endFrame}"/>` +
+        `<path class="croak-hud__paper" d="${endFrame}"/>` +
+        `<path class="croak-hud__grain" d="${endFrame}" fill="url(#${uid}-dots)"/>` +
+        `<path class="croak-hud__ink" d="${endFrame}"/>` +
+        // The mark of the thing that is no longer standing.
+        `<g transform="translate(${n2(END_W * 0.5 - 14)},9) scale(1)">` +
+        `${BOSS_SIGIL.heron}</g>` +
+        `<path class="croak-hud__warn" opacity="1" ` +
+        `d="M${n2(END_W * 0.5 - 18)},30L${n2(END_W * 0.5 + 22)},6"/>`;
+      for (let i = 0; i < slots; i++) {
+        const x = left + step * i + (step - 18) * 0.5;
+        markup +=
+          `<g transform="translate(${n2(x)},44)">` +
+          (i < found
+            ? TOAST_ICON.page
+            : `<path class="croak-ending__slot" d="M3.4,1.6h8.2l3,3v11.8H3.4Z"/>`) +
+          `</g>`;
+      }
+      endingSvg.innerHTML = markup;
+      endingEl.classList.add('is-on');
+    },
+
     toast(icon: ToastIcon, count?: number): void {
       toastSvg.innerHTML =
         `<g transform="translate(${count === undefined ? 41 : 24},0)">` +
@@ -667,6 +816,8 @@ export function createHud(parent?: HTMLElement | null, rng?: Rng): Hud {
       lockTop.remove();
       lockBottom.remove();
       toastEl.remove();
+      bossEl.remove();
+      endingEl.remove();
       releaseStyle();
     },
   };

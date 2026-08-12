@@ -100,6 +100,55 @@ interface Emitter {
 }
 
 const EMITTERS: Record<FxKind, Emitter> = {
+  // The Heron's dive burying itself in the deck. The biggest emitter in the
+  // game by some way, because it is the biggest single event in the game: a
+  // wide, slow ring of thrown-up water that outlasts its own hitstop.
+  heronSlam: {
+    group: 'dustPale',
+    count: 22,
+    ring: true,
+    radius: 1.1,
+    height: 0.1,
+    floorDrop: 0,
+    speedMin: 4.0,
+    speedMax: 7.0,
+    riseMin: 1.6,
+    riseMax: 3.2,
+    sizeMin: 0.18,
+    sizeMax: 0.34,
+    lifeMin: 0.5,
+    lifeMax: 0.9,
+    growth: 2.4,
+    pop: 0.06,
+    drag: 3.0,
+    gravity: -4.5,
+    spread: 0,
+    bias: 0,
+  },
+  // Feathers coming off it: a slow, buoyant scatter that hangs long enough to
+  // read as loss rather than as impact.
+  featherBurst: {
+    group: 'dustPale',
+    count: 12,
+    ring: true,
+    radius: 0.7,
+    height: 0.9,
+    floorDrop: 2.0,
+    speedMin: 1.6,
+    speedMax: 3.4,
+    riseMin: 0.6,
+    riseMax: 1.6,
+    sizeMin: 0.1,
+    sizeMax: 0.2,
+    lifeMin: 0.6,
+    lifeMax: 1.1,
+    growth: 0.8,
+    pop: 0.08,
+    drag: 2.2,
+    gravity: -1.8,
+    spread: 0,
+    bias: 0,
+  },
   // Bramble giving way: leaf and thorn, thrown outward and downward.
   brambleCut: {
     group: 'spore',

@@ -12,7 +12,14 @@
 
 import * as THREE from 'three';
 import type { Action, GameSample, HitInfo, TestApi } from './core/types';
-import { HITSTOP_LIGHT, KNOCKBACK_PLAYER, LIGHT_ATK } from './core/constants';
+import {
+  HERON,
+  HERON_PHASE_2,
+  HERON_PHASE_3,
+  HITSTOP_LIGHT,
+  KNOCKBACK_PLAYER,
+  LIGHT_ATK,
+} from './core/constants';
 import { THREE_REVISION } from './render/renderer';
 import type { Game } from './game';
 
@@ -140,8 +147,18 @@ export function createTestApi(game: Game): TestApi {
     }));
   }
 
+  function bossPhase(): number {
+    const boss = ctx.boss;
+    if (boss === null || !boss.alive) return 0;
+    const fraction = boss.hp / HERON.hp;
+    if (fraction > HERON_PHASE_2) return 1;
+    if (fraction > HERON_PHASE_3) return 2;
+    return 3;
+  }
+
   function sample(): GameSample {
     const player = ctx.player;
+    const boss = ctx.boss;
     const position = player.position;
     const info = game.renderer.info;
 
@@ -178,6 +195,13 @@ export function createTestApi(game: Game): TestApi {
       zone: ctx.level.id,
       hasShield: ctx.progress.hasShield,
       blocking: ctx.player.blocking,
+      // The bar's own numbers. `bossPhase` is DERIVED from health here rather
+      // than read off the boss, so the A6 gate never proves a phase by asking
+      // the boss which phase it thinks it is in - it proves phases by watching
+      // what the fight actually does (where it stands, whether it dives).
+      bossHp: boss === null || !boss.alive ? 0 : boss.hp,
+      bossPhase: bossPhase(),
+      victory: ctx.victory,
       trauma: ctx.cameraRig.trauma,
       hitstopRemaining: ctx.loop.hitstopRemaining,
       // Counted for the frame just rendered: three resets these per render(),

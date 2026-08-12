@@ -1,10 +1,10 @@
 # Frogger — a Tunic-like with a frog
 
-**Phase:** 2 — build (Track A, milestones A1-A5 done; next is A6 the Heron)
+**Phase:** 2 — build (Track A, milestones A1-A6 done; next is A7 manual + Croakic)
 **Stack:** dual-track: (A) Vite + Three.js + TS (primary), (B) Godot 4 web export (comparison)
 **Repo:** github.com/netsrakmas/frogger
 **Live:** https://netsrakmas.github.io/frogger/ — deployed 2026-08-12 (GitHub reports success; see the ship note on verification)
-**Updated:** 2026-08-11
+**Updated:** 2026-08-12
 
 ## One-liner
 A triple-A-polish demo of a Tunic-like isometric action-adventure starring a frog with a tongue attack and pickable weapons — overworld + dungeon + boss, with collectible manual pages in a cryptic glyph language.
@@ -12,7 +12,7 @@ A triple-A-polish demo of a Tunic-like isometric action-adventure starring a fro
 ## Phase log
 - 0 idee — skipped by explicit user decision (verdict: build). User committed to building via gauntlet prompting.
 - 1 plan — done. RESEARCH.md (3 angles: spec craft, Tunic visual grammar, architecture + feel numbers) and PROMPT.md (dual-track master spec, milestones A1–A10, B1–B5, C1) written. Spec-only per user request; build not started.
-- 2 build — in progress. **A1–A5 done** (see milestone log). Next: A6 boss.
+- 2 build — in progress. **A1–A6 done** (see milestone log). Next: A7 manual + Croakic.
 - 3 art — not started
 - 4 test — not started
 - 5 ship — deployed via Actions. Publish confirmed by GitHub; end-to-end live check still owed (this container cannot reach github.io).
@@ -142,6 +142,71 @@ controls 14/14, gate 25/25).
   plateau and slowed the movement gate to 4.72 u/s.
 - Known flake: a3's grapple row failed once in ~6 runs (timing on the pull
   window); 16/16 on three consecutive runs since.
+
+**A6 — The Heron — DONE 2026-08-12.** Gate: `tests/a6.mjs` **20/20**. Every
+earlier gate re-run against the same build and green: gate 25/25, feel 51/51,
+a2 28/28, a3 16/16, a4 15/15, a5 19/19, controls 14/14.
+- **Third zone, and the demo now has an ending.** The vault door the sluice
+  puzzle opens leads onto the belfry's flooded roof. The gate walks the whole
+  demo to get there — sword, key, belfry door, four levers, vault — and then
+  kills the boss on one life using nothing but the verbs a player has.
+- **Every wind-up in the fight is measured on the SIMULATION clock**, not by
+  counting rendered frames, and the shortest one anywhere across three phases
+  is 36 f. Phase 3's haste (x0.72) would put a stab at 28.8 f on its own;
+  `HERON_TELEGRAPH_FLOOR` is what stops "harder" from meaning "less readable".
+  The dive measures its full 90 f, and dodging it left the beak in the deck for
+  **2.98 s** of the 3 s the spec asks for.
+- **Phase 2 is a traversal problem, and the gate measures it as one.** The Heron
+  holds the middle (0.55 u off centre, 1.71 u up). Five seconds of full stick
+  straight at it from the rim gets from 12.31 u to 9.77 u and stalls — the gust
+  beats MOVE_SPEED well outside the posts. The tongue then does what legs
+  cannot: post haul 9.77 -> 5.54 u, and from there the Heron itself is an
+  ANCHOR, so the frog travels and spends the flight as the arrival slash.
+  That is section 4's bottom row finally being the only way through a room.
+- The last manual page appears 15.60 u out on a ledge behind the far wall once
+  the Heron is down, camera-occluded (asserted with the same view-axis cast A4
+  uses), reachable on foot through a doorway spanned by a fallen lintel.
+- **Four real defects found by the gate, all fixed:**
+  1. **The dive could not be dodged at all.** Locking its target at 60% of a
+     90 f tell left 0.6 s of running — 3.0 u at MOVE_SPEED — against a 3.4 u
+     blast. You could read it, sprint, and still be inside it.
+  2. **A grapple post you are standing on outranked everything else in the
+     aim.** From the rung you had just hauled to, the tongue kept re-grabbing
+     it, so the Heron could not be anchored from its own arena's posts and
+     phase 2 had no exit. `GRAPPLE_MIN_RANGE`.
+  3. **The gale had no falloff at the parapet** and pushed the frog out through
+     the doorway in the far wall, onto the ledge, out of the fight — leaving the
+     Heron alone in the room.
+  4. **A point-blank feather volley was a shotgun**: five feathers, 1 damage
+     each, against 6 hp, for a wind-up shared with everything else. Feathers are
+     a zoning move now; up close it reaches for the beak instead.
+- **Three harness bugs, each of which had produced a false reading:** telemetry
+  sampled only between the script's own decisions reported 26 f for a 40 f
+  telegraph (the gate was measuring its own polling interval); teleporting the
+  frog out of a `tonguePull` left the anchor behind and hauled it back at
+  18 u/s, so the "walk into the wind" check was measuring the tongue; and a
+  first fight policy that backed off from every wind-up survived 9000 frames
+  without landing a single blow, because the Heron simply walks back to its own
+  reach. Strafing round the committed cone is the answer — which is also how the
+  fight is designed to be played.
+- Note on retries: the Heron heals to full if the frog dies or rests at the
+  arena shrine, so `k1` is a one-life kill, not an attrition win.
+- **A fifth defect, caught by the A4 and A5 gates rather than by A6's.**
+  Generalising the single hard-coded belfry door into a doorway table dropped a
+  subtlety the original had: a SHUT door must not arm the transition. Without
+  that, the frame the key turned was the frame the frog was thrown through the
+  door it was standing at to unlock it — A4 read the door as still locked
+  because the game was already in the belfry answering about the wrong world,
+  and A5's whole descent ran from a bad position and lost three checks. Arming
+  is now per door and a shut door never arms it. Worth recording because the
+  A6 gate was green through all of it: a new gate says nothing about the ones
+  it did not run.
+- Known flake, host-load dependent: on a heavily loaded run A3's whiff row read
+  the tongue's reach as 5.42 u instead of 7.00 u. The sampler polls on rendered
+  frames, and a rendered frame can cover several simulation steps when the host
+  is contended, so the 12-frame extension can be sampled past its own peak.
+  16/16 on a quiet re-run with the reach at exactly 7.00 u. The measurement
+  wants a peak-tracking hook rather than a poll; noted for A10.
 
 ## Open questions
 - Which of the two stacks wins after comparison (decided in/after phase 2).
