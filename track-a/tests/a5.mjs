@@ -318,11 +318,14 @@ async function main() {
           if (cur && cur.on) break;
           // Stand on the walkway outside the water, looking in at the lever.
           const away = Math.hypot(lever.pos[0], lever.pos[2]) || 1;
-          // Vary the stand-off a little between attempts: one lever sits behind
-          // the ramp from a single fixed angle.
-          const reach = 9.2 + (attempt % 4) * 0.7;
-          const standX = (lever.pos[0] / away) * reach;
-          const standZ = (lever.pos[2] / away) * reach;
+          // A player who cannot hit a lever from one spot steps sideways along
+          // the walkway, so the test does too: the ramps occupy part of the
+          // ring, and a single fixed approach angle can be standing on one.
+          const reach = 9.2 + (attempt % 3) * 0.8;
+          const swing = ((attempt % 5) - 2) * 0.28;
+          const base = Math.atan2(lever.pos[0], lever.pos[2]) + swing;
+          const standX = Math.sin(base) * reach;
+          const standZ = Math.cos(base) * reach;
           c.teleportPlayer(standX, lever.pos[1], standZ);
           await c.frames(3);
           await a.faceFrom(lever.pos, Math.atan2(standX - lever.pos[0], standZ - lever.pos[2]),

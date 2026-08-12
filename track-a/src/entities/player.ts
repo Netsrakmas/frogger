@@ -152,6 +152,13 @@ function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
 
 interface FrogModel {
   visual: THREE.Group;
+  /** Swings. Everything about reading an attack hangs off this one node. */
+  arm: THREE.Group;
+  weapons: Record<WeaponId, THREE.Mesh>;
+  /** Raised on the off hand while guarding. */
+  shield: THREE.Mesh;
+  /** The arc the current swing actually covers, shown while it is live. */
+  trail: THREE.Mesh;
   geometries: THREE.BufferGeometry[];
 }
 
@@ -235,7 +242,67 @@ function buildFrog(): FrogModel {
     visual.add(outline);
   }
 
-  return { visual, geometries };
+  // ------------------------------------------------------------- the hands
+  // Until now the frog fought with nothing: no weapon was ever drawn and the
+  // attack states had no pose, so a swing was seven frames of standing still
+  // followed by a spark. Everything below exists to make the frame data
+  // VISIBLE - which is the difference between a combat system and a hidden one.
+  const arm = new THREE.Group();
+  arm.position.set(0.34, 0.42, 0.05);
+  visual.add(arm);
+
+  const stickGeo = merge([
+    place(new THREE.CylinderGeometry(0.045, 0.055, 0.7, 5), 0, 0.35, 0),
+    place(new THREE.SphereGeometry(0.06, 5, 4), 0, 0.7, 0),
+  ]);
+  const stick = new THREE.Mesh(stickGeo, material('stoneShade', { flatShading: true }));
+  stick.castShadow = true;
+
+  const swordGeo = merge([
+    place(new THREE.BoxGeometry(0.075, 0.86, 0.03), 0, 0.5, 0),
+    place(new THREE.BoxGeometry(0.26, 0.06, 0.08), 0, 0.1, 0),
+    place(new THREE.CylinderGeometry(0.035, 0.035, 0.18, 5), 0, 0.02, 0),
+  ]);
+  const sword = new THREE.Mesh(swordGeo, material('ruinCool', { flatShading: true }));
+  sword.castShadow = true;
+
+  for (const weapon of [stick, sword]) {
+    // Held angled out from the body at rest, so the silhouette says "armed"
+    // even when standing still.
+    weapon.rotation.set(-0.5, 0, 0.25);
+    arm.add(weapon);
+  }
+  sword.visible = false;
+
+  const shieldGeo = merge([
+    place(new THREE.CylinderGeometry(0.26, 0.26, 0.055, 6).rotateX(Math.PI * 0.5), 0, 0, 0, 1, 1.3, 1),
+    place(new THREE.SphereGeometry(0.075, 6, 5), 0, 0, 0.05),
+  ]);
+  const shield = new THREE.Mesh(shieldGeo, material('stoneShade', { flatShading: true }));
+  shield.castShadow = true;
+  shield.visible = false;
+  visual.add(shield);
+
+  // The blade's streak: a flat blade-shaped sliver reaching out along the
+  // swing, drawn at the blade's own angle each frame. A ground-plane arc was
+  // tried first and pointed off to the frog's right, because RingGeometry
+  // measures theta from +X while the frog faces +Z - and a hitbox indicator
+  // that is not where the hitbox is, is worse than none.
+  const trailGeo = new THREE.PlaneGeometry(1, 0.16);
+  trailGeo.rotateX(-Math.PI / 2);
+  // Anchored at the frog and reaching forward along +Z, so scaling z is reach.
+  trailGeo.rotateY(Math.PI / 2);
+  trailGeo.translate(0, 0, 0.5);
+  const trail = new THREE.Mesh(
+    trailGeo,
+    material('heroBelly', { emissive: true, transparent: true, opacity: 0.75 }).clone(),
+  );
+  trail.visible = false;
+  visual.add(trail);
+
+  geometries.push(stickGeo, swordGeo, shieldGeo, trailGeo);
+
+  return { visual, arm, weapons: { stick, sword }, shield, trail, geometries };
 }
 
 // ------------------------------------------------------------------ player
@@ -892,6 +959,83 @@ export function createPlayer(
     }
   }
 
+  /**
+   * The swing, driven by the SAME frame data the hitbox uses. Windup winds the
+   * arm back, the active window sweeps it through the arc, recovery brings it
+   * home - so what the player sees and what the game tests are the same three
+   * numbers, and a swing that looks early is early.
+   */
+  function presentWeapon(): void {
+    const armed = model.weapons[weapon];
+    for (const id of ['stick', 'sword'] as WeaponId[]) {
+      model.weapons[id].visible = id === weapon && carrying === null;
+    }
+
+    const frames = swing();
+    const activeFrom = frames.windup;
+    const activeTo = frames.windup + frames.active;
+    const half = frames.arc;
+
+    let armYaw = 0;
+    let armPitch = 0;
+    let showTrail = false;
+
+    if (state === 'attack') {
+      if (stateTime < activeFrom) {
+        // Wind back, easing out: the anticipation is the readable part.
+        const t = Math.min(1, stateTime / Math.max(activeFrom, TIME_EPS));
+        armYaw = half * (1 - Math.pow(1 - t, 2));
+        armPitch = -0.6 * t;
+      } else if (stateTime < activeTo) {
+        // The strike: straight through the arc, fast and linear.
+        const t = (stateTime - activeFrom) / Math.max(frames.active, TIME_EPS);
+        armYaw = half - 2 * half * t;
+        armPitch = -0.6 + 0.6 * t;
+        showTrail = true;
+      } else {
+        // Recovery: drift back to rest, which is why you cannot act yet.
+        const t = Math.min(1, (stateTime - activeTo) / Math.max(frames.recovery, TIME_EPS));
+        armYaw = -half * (1 - t);
+      }
+    } else if (state === 'roll') {
+      armYaw = 0.5;
+      armPitch = -0.9;
+    }
+
+    model.arm.rotation.set(armPitch, armYaw, 0);
+    // Blocking hides the weapon arm behind the shield rather than leaving it
+    // waving about, so the guard pose reads as one shape.
+    if (blocking) {
+      model.arm.rotation.set(-0.2, -0.7, 0);
+      armed.visible = carrying === null;
+    }
+
+    // The streak follows the blade through the arc, out to this swing's reach.
+    model.trail.visible = showTrail;
+    if (showTrail) {
+      const t = (stateTime - activeFrom) / Math.max(frames.active, TIME_EPS);
+      model.trail.scale.set(1, 1, frames.reach);
+      model.trail.rotation.y = armYaw;
+      model.trail.position.y = 0.5;
+      const fade = 1 - t * t;
+      (model.trail.material as THREE.MeshToonMaterial).opacity = 0.85 * fade;
+    }
+
+    // The shield only exists once it has been found, and only comes up on guard.
+    const ctx = ctxRef;
+    const owned = ctx !== null && ctx.progress.hasShield;
+    model.shield.visible = owned;
+    if (owned) {
+      if (blocking) {
+        model.shield.position.set(0, 0.46, 0.42);
+        model.shield.rotation.set(0.15, 0, 0);
+      } else {
+        model.shield.position.set(-0.36, 0.4, -0.06);
+        model.shield.rotation.set(0.1, 0.5, 0.2);
+      }
+    }
+  }
+
   /** Draw the rope, and carry whatever is in the frog's mouth along with it. */
   function presentTongue(): void {
     const out = state === 'tongue' || state === 'tonguePull';
@@ -1145,12 +1289,15 @@ export function createPlayer(
       resolveGates(ctx);
 
       present(ctx, dt);
+      presentWeapon();
       presentTongue();
       // Anything entered during this frame has now run a frame of its own.
       freshEntry = false;
     },
 
     dispose(): void {
+      // The streak's material is a clone, so the kit's cache does not own it.
+      (model.trail.material as THREE.Material).dispose();
       root.removeFromParent();
       // Bodies AND their outline hulls: the hulls are clones this entity was
       // handed, so nothing else can free them.
