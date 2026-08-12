@@ -100,6 +100,18 @@ All earlier gates still green (feel 51/51, a2 28/28, a3 16/16, gate 25/25).
   between swings, so only a swing's *first* frame ever registered on bramble and
   every later blow silently did nothing.
 
+**Controls — keyboard, gamepad and touch — DONE 2026-08-11.** Gate:
+`tests/controls.mjs` **14/14**. Keyboard and gamepad were already in from A1;
+this adds the mobile layer. Every source drives the same InputSystem, so a
+touch roll is buffered, consumed and i-framed exactly like a keyed one.
+- Floating virtual stick (re-centres under a drifting thumb), five drawn
+  buttons sized 56–76 px, all above the 44 px touch-target floor.
+- Verified with real synthesised touch events, not by inspecting the DOM:
+  dragging the stick moved the frog 3.70 u and released cleanly to idle, and
+  the roll/attack/tongue/lock-on buttons each entered their real state.
+- The layer does not mount on a desktop pointer at all (asserted: 0 buttons in
+  the DOM), so it can never swallow a mouse click.
+
 ## Open questions
 - Which of the two stacks wins after comparison (decided in/after phase 2).
 

@@ -120,6 +120,23 @@ Frog knight, ~1 u tall: round body (heroBody), belly patch (heroBelly), little t
 (heroTunic), oversized eyes, stubby limbs. Silhouette must read at gameplay zoom:
 round + squat vs. the world's angular geometry.
 
+**Controls (every source reaches the same logic through one InputSystem):**
+
+| Verb | Keyboard / mouse | Gamepad (standard mapping) | Touch |
+|---|---|---|---|
+| Move | WASD or arrows | left stick (deadzone 0.22) or d-pad | floating stick, left 46% of screen |
+| Roll | Space or Shift | B / circle | roll button |
+| Attack | J, Z or left mouse | X / square | attack button (largest, under the thumb) |
+| Tongue | K or X | Y / triangle | tongue button |
+| Lock-on | L, C or right mouse | LT or right-stick click | lock-on button |
+| Interact | E or Enter | A / cross | interact button |
+
+Touch mounts only on a coarse pointer (or `?touch=1`); on a desktop the layer
+does not exist and cannot swallow a click. The stick is deliberately floating
+rather than fixed — a fixed pad makes the player hunt for a spot hidden under
+their own thumb, and that hunt costs more than the sub-100 ms the primary verb
+is allowed.
+
 Verbs (all frame data in §5's constants block):
 - **Move** — camera-relative, instant response, slight hop-bob.
 - **Roll** — Tunic rules: i-frames for the first half (dust cloud = the tell), costs

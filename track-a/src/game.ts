@@ -56,6 +56,7 @@ import { createCoin, createGhost, createWeaponPickup } from './entities/pickup';
 import { createShrine } from './world/shrine';
 import { createGrapplePost } from './world/grapple';
 import { createHud } from './ui/hud';
+import { createTouchControls } from './ui/touch';
 
 export interface Game {
   readonly ctx: GameContext;
@@ -113,6 +114,8 @@ export function createGame(
   // Pointer buttons belong to the canvas; keys, blur and pad stay on window.
   const input = createInput(canvas);
   const hud = createHud(hudParent, rng);
+  // Mounts only on a coarse pointer; on a desktop this is inert and invisible.
+  const touch = createTouchControls(hudParent, input);
   const fx = createFx(scene, rng);
   const player = createPlayer(scene, level, rng);
 
@@ -506,6 +509,7 @@ export function createGame(
       stepListeners.clear();
 
       input.dispose();
+      touch.dispose();
       hud.dispose();
       fx.dispose();
 
