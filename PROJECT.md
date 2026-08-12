@@ -3,7 +3,7 @@
 **Phase:** 2 — build (Track A, milestones A1-A4 done; next is A5 the Sunken Belfry)
 **Stack:** dual-track: (A) Vite + Three.js + TS (primary), (B) Godot 4 web export (comparison)
 **Repo:** github.com/netsrakmas/frogger
-**Live:** not deployed
+**Live:** https://netsrakmas.github.io/frogger/ — *blocked: Pages not enabled on the repo yet (see Open questions)*
 **Updated:** 2026-08-11
 
 ## One-liner
@@ -15,7 +15,7 @@ A triple-A-polish demo of a Tunic-like isometric action-adventure starring a fro
 - 2 build — in progress. **A1–A4 done** (see milestone log). Next: A5 dungeon.
 - 3 art — not started
 - 4 test — not started
-- 5 ship — not started
+- 5 ship — workflow in place and building green; blocked on a one-click repo setting.
 
 ## Milestone log
 
@@ -114,6 +114,17 @@ touch roll is buffered, consumed and i-framed exactly like a keyed one.
 
 ## Open questions
 - Which of the two stacks wins after comparison (decided in/after phase 2).
+- **ACTION NEEDED (owner only): enable GitHub Pages.**
+  `Settings → Pages → Build and deployment → Source: GitHub Actions`, at
+  https://github.com/Netsrakmas/frogger/settings/pages
+  The deploy workflow is committed and its build job passes (npm ci, tsc,
+  vite build, artifact uploaded in ~20 s). The publish step fails with
+  `HttpError: Not Found ... Ensure GitHub Pages has been enabled` because the
+  repo has no Pages site to deploy into. This cannot be set through the API
+  surface available to this session - it is a repo setting only the owner can
+  flip. Once flipped, re-run the workflow (Actions → Deploy CROAK to Pages →
+  Run workflow) and it should publish without further changes.
+  Then verify with: `node track-a/tests/live.mjs`
 
 ## Decisions locked
 - Protagonist is a frog: tongue attack (pull small enemies / pull self to anchors / grab items) + weapon pickups like Tunic. Why: the user's core concept.
