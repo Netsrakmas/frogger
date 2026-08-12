@@ -1,0 +1,61 @@
+name: Deploy CROAK to Pages
+
+# Built and published by CI rather than by hand: a manual publish step is the
+# one that eventually gets skipped, and then the live site is quietly stale
+# while everyone believes it is current.
+on:
+  push:
+    branches: [claude/frog-game-specs-sewbh0]
+    paths:
+      - 'track-a/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, newest wins.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: track-a
+    env:
+      # The repo depends on Playwright for its gates, but CI only builds here -
+      # downloading a browser would add minutes and a failure mode for nothing.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: track-a/package-lock.json
+
+      - run: npm ci
+
+      # `npm run build` is tsc --noEmit && vite build, so a type error fails the
+      # deploy rather than shipping a broken bundle.
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: track-a/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
