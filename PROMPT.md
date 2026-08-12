@@ -131,6 +131,10 @@ round + squat vs. the world's angular geometry.
 | Lock-on | L, C or right mouse | LT or right-stick click | lock-on button |
 | Block | F or Q (hold) | LB (hold) | block button (hold) |
 | Interact | E or Enter | A / cross | interact button |
+| Manual | Tab or M | Start | manual button (furthest from the fighting thumb) |
+
+Opening the manual PAUSES the world outright — the simulation clock stops, not
+just the world update — so reading is never a thing the game punishes.
 
 Touch mounts only on a coarse pointer (or `?touch=1`); on a desktop the layer
 does not exist and cannot swallow a click. The stick is deliberately floating
@@ -347,7 +351,7 @@ Track A first to M4, then Track B starts — A's code is the reference for B's f
 - [x] **A6 — The Heron.** 3-phase boss per §6, boss HP UI, credits + tally, final
   page. *Gate: boss beatable by script (with generous timings) and by hand; every
   attack telegraph ≥36 f verified; phase-2 grapple loop works.*
-- [ ] **A7 — Manual + Croakic.** Booklet UI, 4 authored pages (canvas-drawn NES
+- [x] **A7 — Manual + Croakic.** Booklet UI, 4 authored pages (canvas-drawn NES
   pastiche per §7), Croakic renderer (text→glyphs), signage, pen-note hint channel.
   *Gate: all pages collectible; spread reveal; glyphs decode round-trip in a unit
   test.*

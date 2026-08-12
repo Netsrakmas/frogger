@@ -822,6 +822,23 @@ export function createDowns(rng: Rng): Level {
     });
   }
 
+  // Signage: one at the door you cannot open yet, one at the bramble that only
+  // yields to an edge, one at the crossing the tongue is the answer to.
+  spawns.push({
+    type: 'sign:belfry',
+    position: new THREE.Vector3(
+      DOOR_SPOT.x + 2.6,
+      height(DOOR_SPOT.x + 2.6, DOOR_SPOT.z + 2.2),
+      DOOR_SPOT.z + 2.2,
+    ),
+    yaw: Math.PI,
+  });
+  spawns.push({
+    type: 'sign:pond',
+    position: new THREE.Vector3(2.4, height(2.4, 5.2), 5.2),
+    yaw: Math.PI * 0.75,
+  });
+
   spawns.push({
     type: 'sword',
     position: new THREE.Vector3(

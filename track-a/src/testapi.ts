@@ -156,6 +156,32 @@ export function createTestApi(game: Game): TestApi {
     return 3;
   }
 
+  /**
+   * Signage, read off the scene graph rather than from a registry: a sign the
+   * player can walk up to is an object in the world, and that is the thing
+   * worth asserting exists.
+   */
+  function signs() {
+    const out: { id: string; pos: [number, number, number]; strokes: number }[] = [];
+    ctx.scene.traverse((object) => {
+      if (!object.name.startsWith('sign:')) return;
+      let strokes = 0;
+      object.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.isMesh !== true || mesh.geometry === undefined) return;
+        const position = mesh.geometry.getAttribute('position');
+        if (position !== undefined && mesh !== object.children[0]) strokes += position.count;
+      });
+      const world = object.getWorldPosition(new THREE.Vector3());
+      out.push({
+        id: object.name.slice('sign:'.length),
+        pos: [world.x, world.y, world.z],
+        strokes,
+      });
+    });
+    return out;
+  }
+
   function sample(): GameSample {
     const player = ctx.player;
     const boss = ctx.boss;
@@ -190,6 +216,9 @@ export function createTestApi(game: Game): TestApi {
       ghosts: ctx.pickups.filter((pickup) => pickup.kind === 'ghost').length,
       shrinesClaimed: ctx.shrines.filter((shrine) => shrine.claimed).length,
       pages: ctx.progress.pages.length,
+      manualOpen: game.manual.open,
+      manualSpread: game.manual.spread,
+      paused: ctx.loop.paused,
       keys: ctx.progress.keys,
       gatesOpen: ctx.gates.filter((gate) => gate.open).length,
       zone: ctx.level.id,
@@ -314,5 +343,6 @@ export function createTestApi(game: Game): TestApi {
     secrets,
     hiddenFromCamera,
     pickupList,
+    signs,
   };
 }

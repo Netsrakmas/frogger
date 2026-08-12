@@ -447,6 +447,16 @@ async function main() {
         c.teleportPlayer(drop.pos[0], drop.pos[1], drop.pos[2]);
         const got = await a.waitFor((k) => k.sample().pages > collected, 200);
         if (got >= 0) collected++;
+        // A7 made a page arriving throw the manual open, and the manual pauses
+        // the world - so a player shuts the book before walking on, and so does
+        // this. Without it the second page is unreachable behind the first
+        // one's reveal, which is exactly what this check caught.
+        for (let i = 0; i < 20 && c.sample().manualOpen; i++) {
+          c.press('manual');
+          await c.frames(1);
+          c.release('manual');
+          await c.frames(2);
+        }
       }
       return { shrines, placed: pageDrops.length, collected, pages: c.sample().pages };
     });

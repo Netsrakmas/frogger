@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import type {
   Damageable,
   Enemy,
+  Entity,
   FxKind,
   GameContext,
   Level,
@@ -62,11 +63,16 @@ import { createGate } from './world/gate';
 import { createCoin, createGhost, createWeaponPickup } from './entities/pickup';
 import { createShrine } from './world/shrine';
 import { createGrapplePost } from './world/grapple';
+import { createSign } from './world/sign';
 import { createHud } from './ui/hud';
+import type { Manual } from './ui/manual';
+import { createManual } from './ui/manual';
 import { createTouchControls } from './ui/touch';
 
 export interface Game {
   readonly ctx: GameContext;
+  /** The booklet, exposed so the test hook can read it without a DOM query. */
+  readonly manual: Manual;
   readonly loop: Loop;
   readonly renderer: THREE.WebGLRenderer;
   readonly canvas: HTMLCanvasElement;
@@ -142,6 +148,8 @@ export function createGame(
   // Pointer buttons belong to the canvas; keys, blur and pad stay on window.
   const input = createInput(canvas);
   const hud = createHud(hudParent, rng);
+  // The booklet. It is its own overlay above the HUD and it pauses the world.
+  const manual = createManual(hudParent, rng);
   // Mounts only on a coarse pointer; on a desktop this is inert and invisible.
   const touch = createTouchControls(hudParent, input);
   const fx = createFx(scene, rng);
@@ -153,6 +161,8 @@ export function createGame(
   const grapplePosts: GrapplePost[] = [];
   const gates: Gate[] = [];
   const levers: Lever[] = [];
+  /** Signage. It has no behaviour, but it still has to be torn down. */
+  const signs: Entity[] = [];
 
   /**
    * Forks are keyed on the spawn's identity, not on a draw count, so refilling
@@ -222,6 +232,10 @@ export function createGame(
       pickups.push(createWeaponPickup(scene, spawn.position, 'sword'));
     } else if (spawn.type === 'shield') {
       pickups.push(createToken(scene, spawn.position, 'shield'));
+    } else if (spawn.type.startsWith('sign:')) {
+      signs.push(
+        createSign(scene, spawn.type.slice('sign:'.length), spawn.position, spawn.yaw),
+      );
     } else if (spawn.type.startsWith('lever:')) {
       levers.push(createLever(scene, spawn.type.slice('lever:'.length), spawn.position));
     } else if (spawn.type.startsWith('sluice:')) {
@@ -284,7 +298,7 @@ export function createGame(
   /** Where the frog wakes up. Moves to whichever shrine was last rested at. */
   let checkpoint = level.playerStart.clone();
 
-  const loop = createLoop({ step, render });
+  const loop = createLoop({ step, render, whilePaused });
 
   /** The player is the only thing an enemy can hit, and it never changes. */
   const enemyTargets: Damageable[] = [player];
@@ -389,6 +403,8 @@ export function createGame(
   let deadFor = 0;
   /** Distinct rng streams per coin, so a payout is deterministic per kill. */
   let coinSerial = 0;
+  /** Pages the booklet has been told about, so a new one triggers the reveal. */
+  let shownPages = 0;
 
   /**
    * The input buffer ages on wall time and must be pumped exactly once per
@@ -432,6 +448,8 @@ export function createGame(
     gates.length = 0;
     for (const lever of levers) lever.dispose();
     levers.length = 0;
+    for (const sign of signs) sign.dispose();
+    signs.length = 0;
   }
 
   /**
@@ -569,8 +587,40 @@ export function createGame(
     }
   }
 
+  /**
+   * The booklet's own input, read on BOTH clocks: from inside a step while the
+   * game is running, and from the loop's paused callback while it is not. The
+   * pause switches the simulation off, so the one verb that can undo it cannot
+   * live in the simulation.
+   */
+  function tickManual(): boolean {
+    if (input.consume('manual')) {
+      manual.toggle();
+      loop.setPaused(manual.open);
+      // Whatever was queued while reaching for the book is not a swing.
+      input.clear('attack');
+      input.clear('tongue');
+      input.clear('roll');
+      input.clear('interact');
+    }
+    if (!manual.open) return false;
+    // Section 7's spread is a thing you READ, and a boss that kept swinging
+    // while you did would make reading it a punishment.
+    if (input.consume('attack')) manual.turn(1);
+    if (input.consume('tongue')) manual.turn(-1);
+    return true;
+  }
+
+  function whilePaused(_realDt: number): void {
+    pumpInput();
+    tickManual();
+    // Deliberately no stepListeners: a paused frame is not a simulation step,
+    // and a feel trace that recorded them would be measuring the reader.
+  }
+
   function step(dt: number): void {
     pumpInput();
+    if (tickManual()) return;
 
     player.update(dt, ctx);
     for (const enemy of enemies) enemy.update(dt, ctx);
@@ -599,6 +649,16 @@ export function createGame(
     hud.setCoins(progress.coins);
     hud.setWeapon(player.weapon);
     hud.setLockedOn(player.lockedOn);
+
+    // A page arriving opens the booklet on the spread it belongs to - the
+    // full-screen reveal section 7 asks for, and the moment the player sees
+    // how many gaps are left.
+    if (progress.pages.length !== shownPages) {
+      shownPages = progress.pages.length;
+      manual.setFound(progress.pages);
+      manual.reveal(progress.pages[progress.pages.length - 1]);
+    }
+
     // Told every step rather than on a change: the bar has to survive a zone
     // swap, a death and a rest without anyone remembering to put it back.
     if (boss !== null && boss.alive) hud.setBoss(boss.kind, boss.hp, HERON.hp);
@@ -657,6 +717,7 @@ export function createGame(
 
   return {
     ctx,
+    manual,
     loop,
     renderer,
     canvas,
@@ -697,6 +758,7 @@ export function createGame(
 
       input.dispose();
       touch.dispose();
+      manual.dispose();
       hud.dispose();
       fx.dispose();
 

@@ -38,6 +38,14 @@ const GL_ARGS = [
   '--disable-gl-drawing-for-tests',
 ];
 
+/**
+ * Every verb the touch layer must offer, named rather than counted: when A7
+ * added the manual button this check failed with "6 !== 7", which told me the
+ * count had changed and nothing at all about whether the right buttons were
+ * there. Listing them means a button that goes MISSING still fails.
+ */
+const TOUCH_VERBS = ['attack', 'tongue', 'roll', 'lock on', 'block', 'manual', 'interact'];
+
 const checks = [];
 const notes = [];
 
@@ -305,15 +313,17 @@ async function main() {
         ? `stick zone ${Math.round(layout.zone.w)}x${Math.round(layout.zone.h)}, ` +
           `${layout.buttons.length} buttons: ${layout.buttons.map((b) => b.label).join(', ')}`
         : 'no stick zone',
-      'stick + 6 buttons',
-      !!layout.zone && layout.buttons.length === 6,
+      `stick + ${TOUCH_VERBS.length} buttons`,
+      !!layout.zone &&
+        layout.buttons.length === TOUCH_VERBS.length &&
+        TOUCH_VERBS.every((verb) => layout.buttons.some((b) => b.label === verb)),
     );
     check(
       't2',
       'every verb has a button, and they are big enough for a thumb',
       layout.buttons.map((b) => `${b.label} ${b.size}px`).join(', '),
       'all >= 44px (the usual touch-target floor)',
-      layout.buttons.length === 6 && layout.buttons.every((b) => b.size >= 44),
+      layout.buttons.length === TOUCH_VERBS.length && layout.buttons.every((b) => b.size >= 44),
     );
 
     // Drag the floating stick and check the frog goes where the thumb points.

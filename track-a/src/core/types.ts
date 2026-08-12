@@ -10,7 +10,15 @@ import type { WeaponId } from './constants';
 
 // --------------------------------------------------------------------- input
 
-export type Action = 'roll' | 'attack' | 'tongue' | 'lockon' | 'interact' | 'block';
+export type Action =
+  | 'roll'
+  | 'attack'
+  | 'tongue'
+  | 'lockon'
+  | 'interact'
+  | 'block'
+  /** Open and close the manual. It pauses the world while it is up. */
+  | 'manual';
 
 export interface InputSystem {
   /** Called once per rendered frame with real (unscaled) delta. */
@@ -63,6 +71,9 @@ export interface Loop {
   readonly fps: number;
   readonly hitstopRemaining: number;
   requestHitstop(seconds: number): void;
+  /** True while the world is stopped outright - the manual, later the menu. */
+  readonly paused: boolean;
+  setPaused(value: boolean): void;
   start(): void;
   stop(): void;
 }
@@ -437,6 +448,10 @@ export interface GameSample {
   ghosts: number;
   shrinesClaimed: number;
   pages: number;
+  /** The booklet: up or not, and which spread it is showing. */
+  manualOpen: boolean;
+  manualSpread: number;
+  paused: boolean;
   keys: number;
   hasShield: boolean;
   blocking: boolean;
@@ -513,6 +528,12 @@ export interface TestApi {
    */
   hiddenFromCamera(x: number, y: number, z: number): boolean;
   pickupList(): PickupSnapshot[];
+  /**
+   * World signage, found by walking the scene graph. `strokes` counts the
+   * triangles of the carved writing, so a sign that says nothing is visible as
+   * a sign that says nothing.
+   */
+  signs(): { id: string; pos: [number, number, number]; strokes: number }[];
 }
 
 declare global {

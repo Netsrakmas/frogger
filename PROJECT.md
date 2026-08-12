@@ -1,6 +1,6 @@
 # Frogger — a Tunic-like with a frog
 
-**Phase:** 2 — build (Track A, milestones A1-A6 done; next is A7 manual + Croakic)
+**Phase:** 2 — build (Track A, milestones A1-A7 done; next is A8 render pass)
 **Stack:** dual-track: (A) Vite + Three.js + TS (primary), (B) Godot 4 web export (comparison)
 **Repo:** github.com/netsrakmas/frogger
 **Live:** https://netsrakmas.github.io/frogger/ — deployed 2026-08-12 (GitHub reports success; see the ship note on verification)
@@ -12,7 +12,7 @@ A triple-A-polish demo of a Tunic-like isometric action-adventure starring a fro
 ## Phase log
 - 0 idee — skipped by explicit user decision (verdict: build). User committed to building via gauntlet prompting.
 - 1 plan — done. RESEARCH.md (3 angles: spec craft, Tunic visual grammar, architecture + feel numbers) and PROMPT.md (dual-track master spec, milestones A1–A10, B1–B5, C1) written. Spec-only per user request; build not started.
-- 2 build — in progress. **A1–A6 done** (see milestone log). Next: A7 manual + Croakic.
+- 2 build — in progress. **A1–A7 done** (see milestone log). Next: A8 render pass.
 - 3 art — not started
 - 4 test — not started
 - 5 ship — deployed via Actions. Publish confirmed by GitHub; end-to-end live check still owed (this container cannot reach github.io).
@@ -207,6 +207,51 @@ a2 28/28, a3 16/16, a4 15/15, a5 19/19, controls 14/14.
   is contended, so the 12-frame extension can be sampled past its own peak.
   16/16 on a quiet re-run with the reach at exactly 7.00 u. The measurement
   wants a peak-tracking hook rather than a poll; noted for A10.
+
+**A7 — Manual + Croakic — DONE 2026-08-12.** Gates: `tests/croakic.mjs`
+**17/17** (pure, no browser) and `tests/a7.mjs` **18/18**. Every earlier gate
+re-run against the same build and green: gate 25/25, feel 51/51, a2 28/28,
+a3 16/16, a4 15/15, a5 19/19, a6 20/20, controls 14/14.
+- **Croakic is a real cipher, not a doodle.** An original hexagon-frame
+  phonemic script: six outer edges spell the vowel, five inner spokes the
+  consonant, a dot under the glyph reverses the reading order, and a word rides
+  one continuous midline. The key ships as a comment in `src/ui/croakic.ts` and
+  the gate asserts it is NOT in the shipped bundle.
+- The unit test does not settle for one sentence surviving a round trip: it
+  walks all 39 phonemes, **all 1521 ordered pairs**, and 4000 seeded multi-word
+  strings, because the property that matters is that the cipher is injective
+  and the greedy syllable packing is always undoable.
+- The English-to-phoneme step is documented as ONE WAY and is not asserted to
+  round trip. There is no way back from /r ay t/ to "wright" rather than
+  "right", so the guarantee is kept at the phoneme layer where it can be.
+- **Four authored pages**, all four slots visible from the first time the book
+  is opened — the collection hook is the hole, not the reward. Body text is
+  Croakic; the margin notes are plain English drawn letter by letter in
+  `penscript.ts`, because §7 wants them readable and rule 12 forbids a font.
+  The gate asserts **zero** `<text>`/`<tspan>`/`<foreignObject>` nodes and zero
+  text content anywhere in the UI.
+- **The pause is a real pause.** Opening the book stops the simulation clock
+  outright rather than just skipping the world update: `simTime` is what every
+  window in the game is measured against, and time spent reading is not time
+  the frog lived through. The gate holds the stick down while the book is up
+  and measures both — 0.000 s of sim and 0.000 u of travel across 40 drawn
+  frames — because asserting the clock alone would pass a pause that only
+  stopped the bookkeeping.
+- Signage is carved, not textured: every stroke of every glyph is a thin box,
+  merged so a whole sentence costs one draw call. Same no-asset rule as the
+  rest of the build.
+- Deviation worth recording: the fourth page is the Heron's and only exists
+  once it is down, so `a7` walks the first three and asserts exactly one slot
+  is still a gap; `a6` v3/v4 already assert the fourth appears behind the
+  arena, is camera-occluded, is reachable on foot and is collectible. All four
+  are covered, across two gates rather than one.
+- **Two older gates caught the new behaviour and were right to.** A4 collected
+  one page and then stalled, because the reveal now throws the book open and
+  the book pauses the world - a player shuts it and walks on, so the gate does
+  too. The controls gate failed with "6 !== 7" when the manual button arrived,
+  which told me a count had changed and nothing about whether the right buttons
+  were there; it names the seven verbs now, so a button going MISSING still
+  fails it. Neither was a defect in the game, and neither was papered over.
 
 ## Open questions
 - Which of the two stacks wins after comparison (decided in/after phase 2).

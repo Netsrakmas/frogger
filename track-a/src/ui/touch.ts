@@ -92,6 +92,19 @@ const BUTTONS: readonly ButtonSpec[] = [
       ' fill="none" stroke-width="5"/>',
   },
   {
+    // The book. Furthest from the fighting thumb on purpose: opening it pauses
+    // the world, and a pause you can trigger by fumbling a dodge is a bug.
+    action: 'manual',
+    x: 132,
+    y: 196,
+    size: 56,
+    label: 'manual',
+    icon:
+      '<path d="M9,14 C16,10 24,10 28,14 C32,10 40,10 47,14 L47,42' +
+      ' C40,38 32,38 28,42 C24,38 16,38 9,42 Z" fill="none" stroke-width="5"/>' +
+      '<path d="M28,14 L28,42" stroke-width="4"/>',
+  },
+  {
     action: 'interact',
     x: 40,
     y: 186,

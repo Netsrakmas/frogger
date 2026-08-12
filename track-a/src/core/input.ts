@@ -35,6 +35,8 @@ const KEY_ACTIONS: Record<string, Action | undefined> = {
   KeyQ: 'block',
   Enter: 'interact',
   NumpadEnter: 'interact',
+  Tab: 'manual',
+  KeyM: 'manual',
 };
 
 /** Screen-space stick contribution per movement key (x right, z down). */
@@ -63,6 +65,7 @@ const PAD_ACTIONS: Record<number, Action | undefined> = {
   6: 'lockon',
   11: 'lockon',
   4: 'block',
+  9: 'manual',
 };
 
 /** Standard-mapping d-pad, treated as digital movement. */
@@ -97,6 +100,7 @@ export function createInput(target: EventTarget = window): InputSystem {
     lockon: newState(),
     interact: newState(),
     block: newState(),
+    manual: newState(),
   };
 
   /** Real-time clock; the buffer ages on wall time, never on sim time. */

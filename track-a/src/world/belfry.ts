@@ -296,10 +296,12 @@ export function createBelfry(rng: Rng): Level {
     // Floor 2: the sluice room.
     { type: 'drownedKnight', position: new THREE.Vector3(-11.5, FLOOR_2 + 0.05, 2.0), yaw: 0 },
     { type: 'spitterFly', position: new THREE.Vector3(0, FLOOR_2 + 0.05, 0), yaw: 0 },
+    { type: 'sign:sluice', position: new THREE.Vector3(-9.6, FLOOR_2, 8.4), yaw: Math.PI * 0.85 },
     { type: 'sluice:vault', position: new THREE.Vector3(SLUICE.x, FLOOR_3 + 0.1, SLUICE.z), yaw: 0 },
 
     // Floor 3: the vault.
     { type: 'shrine:belfry', position: new THREE.Vector3(6.0, FLOOR_3, 3.0), yaw: 0 },
+    { type: 'sign:arena', position: new THREE.Vector3(3.4, FLOOR_3, -7.2), yaw: Math.PI * 0.1 },
     { type: 'shield', position: new THREE.Vector3(-2.0, FLOOR_3 + 0.1, -6.0), yaw: 0 },
     { type: 'page:2', position: new THREE.Vector3(-9.5, FLOOR_3 + 0.1, 4.5), yaw: 0 },
     { type: 'drownedKnight', position: new THREE.Vector3(2.0, FLOOR_3 + 0.05, -2.0), yaw: 0 },

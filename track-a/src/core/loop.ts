@@ -21,6 +21,12 @@ const FPS_WINDOW = 1.0;
 export interface LoopOptions {
   step: (dt: number) => void;
   render: (alpha: number) => void;
+  /**
+   * Called once per frame INSTEAD of stepping, while the loop is paused. The
+   * pause has to leave one door open or there is no way back out of it: this
+   * is where the input that closes the manual gets read.
+   */
+  whilePaused?: (realDt: number) => void;
 }
 
 export function createLoop(opts: LoopOptions): Loop {
@@ -30,6 +36,7 @@ export function createLoop(opts: LoopOptions): Loop {
   let accumulator = 0;
   let frameCount = 0;
   let hitstopRemaining = 0;
+  let paused = false;
   let frameTimeAvg = 0;
   let lastNow = 0;
   let rafId = 0;
@@ -52,7 +59,15 @@ export function createLoop(opts: LoopOptions): Loop {
         frameTimeAvg === 0 ? realDelta : frameTimeAvg + (realDelta - frameTimeAvg) * k;
     }
 
-    if (hitstopRemaining > 0) {
+    if (paused) {
+      // A PAUSE IS A FREEZE THAT DOES NOT DRAIN. The simulation clock stops
+      // dead - not just the world - because simTime is what every window in
+      // the game is measured against, and time spent reading the manual is not
+      // time the frog lived through. The accumulator is left alone for the same
+      // reason hitstop leaves it alone: resuming must not fire a burst of
+      // catch-up steps for time the game deliberately did not live.
+      opts.whilePaused?.(realDelta);
+    } else if (hitstopRemaining > 0) {
       // Hitstop suspends the SIMULATION only - the frame still renders, and the
       // freeze drains on real time so it lasts the same wall duration at any
       // frame rate. The accumulator is left untouched: resuming must not fire a
@@ -94,6 +109,14 @@ export function createLoop(opts: LoopOptions): Loop {
     get fps(): number {
       return frameTimeAvg > 0 ? 1 / frameTimeAvg : 0;
     },
+    get paused(): boolean {
+      return paused;
+    },
+
+    setPaused(value: boolean): void {
+      paused = value;
+    },
+
     get hitstopRemaining(): number {
       return hitstopRemaining;
     },
