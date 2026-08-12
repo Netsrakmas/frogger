@@ -82,6 +82,16 @@ const BUTTONS: readonly ButtonSpec[] = [
       '<path d="M28,6 L28,14 M28,42 L28,50 M6,28 L14,28 M42,28 L50,28" stroke-width="5"/>',
   },
   {
+    action: 'block',
+    x: 126,
+    y: 8,
+    size: 62,
+    label: 'block',
+    icon:
+      '<path d="M28,7 44,13v13.6C44,35 37.6,42 28,45.4C18.4,42 12,35 12,26.6V13Z"' +
+      ' fill="none" stroke-width="5"/>',
+  },
+  {
     action: 'interact',
     x: 40,
     y: 186,

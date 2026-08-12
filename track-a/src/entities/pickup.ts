@@ -244,11 +244,24 @@ export function createGhost(
 export function createToken(
   scene: THREE.Scene,
   position: THREE.Vector3,
-  kind: 'page' | 'key',
+  kind: 'page' | 'key' | 'shield',
   index = 0,
 ): Pickup {
   const geometry =
-    kind === 'page'
+    kind === 'shield'
+      ? (() => {
+          // A kite shield: broad at the shoulder, tapering to a point.
+          const face = new THREE.CylinderGeometry(0.28, 0.28, 0.06, 6);
+          face.rotateX(Math.PI * 0.5);
+          face.scale(1, 1.35, 1);
+          const boss = new THREE.SphereGeometry(0.09, 6, 5);
+          boss.translate(0, 0.02, 0.05);
+          const merged = mergeGeometries([face, boss]);
+          face.dispose();
+          boss.dispose();
+          return merged;
+        })()
+      : kind === 'page'
       ? (() => {
           // A single leaf with a fold, held upright so it reads at any angle.
           const sheet = new THREE.BoxGeometry(0.34, 0.44, 0.012);
@@ -275,7 +288,9 @@ export function createToken(
 
   const mesh = new THREE.Mesh(
     geometry,
-    material(kind === 'page' ? 'heroBelly' : 'gold', { emissive: kind === 'key' }),
+    material(kind === 'page' ? 'heroBelly' : kind === 'shield' ? 'ruinCool' : 'gold', {
+      emissive: kind === 'key',
+    }),
   );
   mesh.castShadow = true;
   scene.add(mesh);
@@ -317,6 +332,9 @@ export function createToken(
           if (kind === 'page') {
             ctx.progress.addPage(index);
             ctx.hud.toast('page', ctx.progress.pages.length);
+          } else if (kind === 'shield') {
+            ctx.progress.grantShield();
+            ctx.hud.toast('shield');
           } else {
             ctx.progress.addKey();
             ctx.hud.toast('key');

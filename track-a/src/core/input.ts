@@ -10,7 +10,14 @@
 import type { Action, InputSystem } from './types';
 import { INPUT_BUFFER } from './constants';
 
-const ACTION_LIST: readonly Action[] = ['roll', 'attack', 'tongue', 'lockon', 'interact'];
+const ACTION_LIST: readonly Action[] = [
+  'roll',
+  'attack',
+  'tongue',
+  'lockon',
+  'interact',
+  'block',
+];
 
 /** Keyed by `event.code` (physical key), so AZERTY/Dvorak players get WASD too. */
 const KEY_ACTIONS: Record<string, Action | undefined> = {
@@ -24,6 +31,8 @@ const KEY_ACTIONS: Record<string, Action | undefined> = {
   KeyL: 'lockon',
   KeyC: 'lockon',
   KeyE: 'interact',
+  KeyF: 'block',
+  KeyQ: 'block',
   Enter: 'interact',
   NumpadEnter: 'interact',
 };
@@ -53,6 +62,7 @@ const PAD_ACTIONS: Record<number, Action | undefined> = {
   3: 'tongue',
   6: 'lockon',
   11: 'lockon',
+  4: 'block',
 };
 
 /** Standard-mapping d-pad, treated as digital movement. */
@@ -86,6 +96,7 @@ export function createInput(target: EventTarget = window): InputSystem {
     tongue: newState(),
     lockon: newState(),
     interact: newState(),
+    block: newState(),
   };
 
   /** Real-time clock; the buffer ages on wall time, never on sim time. */

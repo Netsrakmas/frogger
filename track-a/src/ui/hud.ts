@@ -292,6 +292,10 @@ const WEAPON_ICON: Record<string, string> = {
 };
 
 const TOAST_ICON: Record<string, string> = {
+  shield:
+    '<path class="croak-hud__blade" d="M9,1.4 15.6,4v5.2C15.6,12.6 12.6,15.4 9,16.6' +
+    'C5.4,15.4 2.4,12.6 2.4,9.2V4Z"/>' +
+    '<circle class="croak-hud__haft" cx="9" cy="8.4" r="2.2"/>',
   page:
     '<path class="croak-hud__blade" d="M3.4,1.6h8.2l3,3v11.8H3.4Z"/>' +
     '<path class="croak-hud__num" d="M5.6,6.2h6.4M5.6,9h6.4M5.6,11.8h4"/>',

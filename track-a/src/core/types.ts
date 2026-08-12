@@ -10,7 +10,7 @@ import type { WeaponId } from './constants';
 
 // --------------------------------------------------------------------- input
 
-export type Action = 'roll' | 'attack' | 'tongue' | 'lockon' | 'interact';
+export type Action = 'roll' | 'attack' | 'tongue' | 'lockon' | 'interact' | 'block';
 
 export interface InputSystem {
   /** Called once per rendered frame with real (unscaled) delta. */
@@ -100,13 +100,21 @@ export interface SecretSpot {
   position: THREE.Vector3;
 }
 
+/** The demo has two: the meadow you start in and the tower under it. */
+export type ZoneId = 'downs' | 'belfry';
+
 export interface Level {
+  readonly id: ZoneId;
   readonly root: THREE.Group;
   /** Merged, invisible collision mesh carrying a BVH. */
   readonly collider: THREE.Mesh;
   readonly spawns: SpawnPoint[];
   readonly playerStart: THREE.Vector3;
   readonly secrets: SecretSpot[];
+  /** Where the frog arrives when it walks in from somewhere else. */
+  readonly entries: Record<string, THREE.Vector3>;
+  /** Zones with moving parts (the belfry's water) drive them here. */
+  update?(dt: number, ctx: GameContext): void;
   dispose(): void;
 }
 
@@ -181,6 +189,8 @@ export interface Player extends Entity, Damageable {
   readonly carrying: Enemy | null;
   /** 0 while the tongue is stowed, else how far out it is in world units. */
   readonly tongueReach: number;
+  /** Guard up. Only possible once the Shield has been found. */
+  readonly blocking: boolean;
   equip(weapon: WeaponId): void;
   /** Restore to full and stand up at `at`, clearing every in-flight action. */
   respawn(at: THREE.Vector3): void;
@@ -239,6 +249,22 @@ export interface Gate extends Entity {
   strike(damage: number, cuts: boolean, ctx: GameContext): boolean;
   /** Try to unlock with a key. */
   unlock(ctx: GameContext): boolean;
+  /** Opened by a mechanism rather than by the player. No key, no edge. */
+  release(ctx: GameContext): void;
+  /** Ground-plane radius the frog is pushed out of while this is shut. */
+  readonly blockRadius: number;
+}
+
+/**
+ * A switch too far away to touch. Yanking it with the tongue is the point:
+ * levers sit across water the frog cannot cross, so the verb IS the solution.
+ */
+export interface Lever extends Entity {
+  readonly id: string;
+  readonly position: THREE.Vector3;
+  readonly on: boolean;
+  /** Throw it. Mechanisms watch the set of levers, not the individual pull. */
+  pull(ctx: GameContext): void;
 }
 
 /**
@@ -254,7 +280,7 @@ export interface GrapplePost extends Entity {
 
 // ------------------------------------------------------------ world objects
 
-export type PickupKind = 'coin' | 'ghost' | 'weapon' | 'page' | 'key';
+export type PickupKind = 'coin' | 'ghost' | 'weapon' | 'page' | 'key' | 'shield';
 
 export interface Pickup extends Entity {
   readonly kind: PickupKind;
@@ -291,6 +317,9 @@ export interface Progress {
   addPage(index: number): void;
   readonly keys: number;
   addKey(): void;
+  /** The belfry's Shield. Once found it is never lost. */
+  readonly hasShield: boolean;
+  grantShield(): void;
   /** True if a key was available and has now been spent on a door. */
   spendKey(): boolean;
 }
@@ -316,7 +345,7 @@ export type FxKind =
 
 // ------------------------------------------------------------------------ ui
 
-export type ToastIcon = 'coins' | 'weapon' | 'rested' | 'page' | 'key';
+export type ToastIcon = 'coins' | 'weapon' | 'rested' | 'page' | 'key' | 'shield';
 
 export interface Hud {
   readonly root: HTMLElement;
@@ -356,10 +385,13 @@ export interface GameContext {
   readonly shrines: Shrine[];
   readonly grapplePosts: GrapplePost[];
   readonly gates: Gate[];
+  readonly levers: Lever[];
   readonly hud: Hud;
   readonly progress: Progress;
   addTrauma(amount: number): void;
   requestHitstop(seconds: number): void;
+  /** Tear down this zone and build the other one, arriving at `entry`. */
+  changeZone(zone: ZoneId, entry: string): void;
   spawnFx(kind: FxKind, position: THREE.Vector3, dir?: THREE.Vector3): void;
   /** Scatter `amount` coins at `position` - how a dying enemy pays out. */
   dropCoins(amount: number, position: THREE.Vector3): void;
@@ -393,7 +425,10 @@ export interface GameSample {
   shrinesClaimed: number;
   pages: number;
   keys: number;
+  hasShield: boolean;
+  blocking: boolean;
   gatesOpen: number;
+  zone: ZoneId;
   trauma: number;
   hitstopRemaining: number;
   drawCalls: number;
@@ -442,12 +477,18 @@ export interface TestApi {
   startTrace(): void;
   stopTrace(): void;
   /** Force-damage the player from a direction, to measure i-frames. */
-  probeHit(damage?: number): boolean;
+  /**
+   * Force a blow onto the player. `fromAngle` is the world heading the blow
+   * ARRIVES FROM, so a guard test can put it in front of the shield or behind
+   * it; omitted, it keeps the fixed default direction.
+   */
+  probeHit(damage?: number, fromAngle?: number): boolean;
   teleportPlayer(x: number, y: number, z: number): void;
   enemies(): EnemySnapshot[];
   shrines(): ShrineSnapshot[];
   posts(): ShrineSnapshot[];
   gates(): { id: string; kind: string; open: boolean; pos: [number, number, number] }[];
+  levers(): { id: string; on: boolean; pos: [number, number, number] }[];
   secrets(): { id: string; occluded: boolean; pos: [number, number, number] }[];
   /**
    * Is this point hidden from the fixed camera by level geometry? Cast along

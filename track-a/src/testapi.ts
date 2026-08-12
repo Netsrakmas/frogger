@@ -116,6 +116,18 @@ export function createTestApi(game: Game): TestApi {
     return hits.length > 0;
   }
 
+  function levers() {
+    return ctx.levers.map((lever) => ({
+      id: lever.id,
+      on: lever.on,
+      pos: [lever.position.x, lever.position.y, lever.position.z] as [
+        number,
+        number,
+        number,
+      ],
+    }));
+  }
+
   function pickupList() {
     return ctx.pickups.map((pickup) => ({
       kind: pickup.kind,
@@ -163,6 +175,9 @@ export function createTestApi(game: Game): TestApi {
       pages: ctx.progress.pages.length,
       keys: ctx.progress.keys,
       gatesOpen: ctx.gates.filter((gate) => gate.open).length,
+      zone: ctx.level.id,
+      hasShield: ctx.progress.hasShield,
+      blocking: ctx.player.blocking,
       trauma: ctx.cameraRig.trauma,
       hitstopRemaining: ctx.loop.hitstopRemaining,
       // Counted for the frame just rendered: three resets these per render(),
@@ -244,11 +259,17 @@ export function createTestApi(game: Game): TestApi {
       recording = false;
     },
 
-    probeHit(damage: number = LIGHT_ATK.damage): boolean {
+    probeHit(damage: number = LIGHT_ATK.damage, fromAngle?: number): boolean {
+      // HitInfo.direction points attacker -> victim, so a blow arriving FROM
+      // `fromAngle` travels the opposite way.
+      const direction =
+        fromAngle === undefined
+          ? PROBE_DIRECTION.clone()
+          : new THREE.Vector3(-Math.sin(fromAngle), 0, -Math.cos(fromAngle));
       const hit: HitInfo = {
         damage,
         knockback: KNOCKBACK_PLAYER,
-        direction: PROBE_DIRECTION.clone(),
+        direction,
         hitstop: HITSTOP_LIGHT,
         source: 'enemy',
       };
@@ -265,6 +286,7 @@ export function createTestApi(game: Game): TestApi {
     shrines,
     posts,
     gates,
+    levers,
     secrets,
     hiddenFromCamera,
     pickupList,

@@ -152,6 +152,18 @@ export function createGate(
       return true;
     },
 
+    get blockRadius(): number {
+      return radius;
+    },
+
+    /** A mechanism opened it - no key spent, no edge required. */
+    release(ctx: GameContext): void {
+      if (open) return;
+      open = true;
+      ctx.addTrauma(TRAUMA_HIT);
+      ctx.spawnFx('shrineRest', new THREE.Vector3(pos.x, pos.y + 0.4, pos.z));
+    },
+
     unlock(ctx: GameContext): boolean {
       if (open || kind !== 'door') return false;
       if (!ctx.progress.spendKey()) return false;

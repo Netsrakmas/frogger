@@ -23,6 +23,7 @@ import type {
   Enemy,
   GameContext,
   GrapplePost,
+  Lever,
   Pickup,
   TongueOutcome,
 } from '../core/types';
@@ -50,6 +51,7 @@ export type TongueTarget =
   | { kind: 'enemy'; enemy: Enemy; position: THREE.Vector3 }
   | { kind: 'pickup'; pickup: Pickup; position: THREE.Vector3 }
   | { kind: 'post'; post: GrapplePost; position: THREE.Vector3 }
+  | { kind: 'lever'; lever: Lever; position: THREE.Vector3 }
   | { kind: 'miss'; position: THREE.Vector3 };
 
 export interface TongueView {
@@ -155,6 +157,12 @@ export function pickTongueTarget(
   for (const post of ctx.grapplePosts) {
     consider(post.position, () => ({ kind: 'post', post, position: post.position }), 0.8);
   }
+  // Levers outrank everything: a lever is only ever placed where the player
+  // cannot reach it, so a tongue pointed at one is never pointed at it by
+  // accident.
+  for (const lever of ctx.levers) {
+    consider(lever.position, () => ({ kind: 'lever', lever, position: lever.position }), 0.55);
+  }
   for (const pickup of ctx.pickups) {
     if (!pickup.alive) continue;
     consider(pickup.position, () => ({ kind: 'pickup', pickup, position: pickup.position }), 1.0);
@@ -192,6 +200,10 @@ export function resolveTongue(
   switch (target.kind) {
     case 'pickup': {
       target.pickup.lure();
+      return { outcome: 'none', anchor: null, held: null };
+    }
+    case 'lever': {
+      target.lever.pull(ctx);
       return { outcome: 'none', anchor: null, held: null };
     }
     case 'post': {

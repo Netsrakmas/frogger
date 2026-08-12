@@ -28,7 +28,9 @@ import type {
   Gate,
   GrapplePost,
   Rng,
+  Lever,
   Shrine,
+  ZoneId,
 } from './core/types';
 import {
   DEATH_COIN_DROP,
@@ -45,11 +47,13 @@ import { createLighting } from './render/lighting';
 import { disposeMaterials } from './render/materials';
 import { createRenderer } from './render/renderer';
 import { createCameraRig } from './world/camera';
-import { createLevel } from './world/level';
+import { createZone } from './world/zones';
+import { createLever } from './world/lever';
 import { createPlayer } from './entities/player';
 import { createSporeling } from './entities/sporeling';
 import { createBeetleGuard } from './entities/beetle';
 import { createSpitterFly } from './entities/spitter';
+import { createDrownedKnight } from './entities/knight';
 import { createToken } from './entities/pickup';
 import { createGate } from './world/gate';
 import { createCoin, createGhost, createWeaponPickup } from './entities/pickup';
@@ -85,6 +89,7 @@ const ENEMY_FACTORIES: Record<string, EnemyFactory | undefined> = {
   sporeling: createSporeling,
   beetleGuard: createBeetleGuard,
   spitterFly: createSpitterFly,
+  drownedKnight: createDrownedKnight,
 };
 
 export function createGame(
@@ -107,7 +112,7 @@ export function createGame(
   // lighting owns scene.fog and scene.background; nothing else may assign them.
   const lighting = createLighting(scene);
 
-  const level = createLevel(rng);
+  let level = createZone(rng, 'downs');
   scene.add(level.root);
 
   const cameraRig = createCameraRig(viewportWidth(), viewportHeight());
@@ -120,10 +125,15 @@ export function createGame(
   const player = createPlayer(scene, level, rng);
 
   const enemies: Enemy[] = [];
+  const pickups: Pickup[] = [];
+  const shrines: Shrine[] = [];
+  const grapplePosts: GrapplePost[] = [];
+  const gates: Gate[] = [];
+  const levers: Lever[] = [];
 
   /**
    * Forks are keyed on the spawn's identity, not on a draw count, so refilling
-   * the meadow after a death replays exactly the same enemies (section 10's
+   * a zone after a death replays exactly the same enemies (section 10's
    * determinism gate) instead of walking the root stream forward.
    */
   function spawnEnemies(): void {
@@ -132,23 +142,19 @@ export function createGame(
       const make = ENEMY_FACTORIES[spawn.type];
       if (make === undefined) continue;
       enemies.push(
-        make(scene, level, spawn.position, rng.fork(`spawn:${spawn.type}:${i}`)),
+        make(scene, level, spawn.position, rng.fork(`spawn:${level.id}:${spawn.type}:${i}`)),
       );
     }
   }
-
-  spawnEnemies();
-
-  const pickups: Pickup[] = [];
-  const shrines: Shrine[] = [];
-  const grapplePosts: GrapplePost[] = [];
-  const gates: Gate[] = [];
   /** The ghost currently owed to the player. Dying again abandons it for good. */
   let ghost: Pickup | null = null;
   let coins = 0;
   const pages: number[] = [];
   let keys = 0;
+  let hasShield = false;
 
+  /** Everything in a zone that is not an enemy. Torn down by teardownWorld. */
+  function spawnProps(): void {
   for (const spawn of level.spawns) {
     if (spawn.type.startsWith('shrine:')) {
       shrines.push(
@@ -180,8 +186,29 @@ export function createGame(
       pickups.push(createToken(scene, spawn.position, 'key'));
     } else if (spawn.type === 'sword') {
       pickups.push(createWeaponPickup(scene, spawn.position, 'sword'));
+    } else if (spawn.type === 'shield') {
+      pickups.push(createToken(scene, spawn.position, 'shield'));
+    } else if (spawn.type.startsWith('lever:')) {
+      levers.push(createLever(scene, spawn.type.slice('lever:'.length), spawn.position));
+    } else if (spawn.type.startsWith('sluice:')) {
+      gates.push(
+        createGate(scene, spawn.type.slice('sluice:'.length), 'door', spawn.position, spawn.yaw),
+      );
     }
   }
+  }
+
+  spawnEnemies();
+  spawnProps();
+
+  /** Queued so a zone never changes underneath a loop that is still walking it. */
+  let pendingZone: { zone: ZoneId; entry: string } | null = null;
+  /**
+   * Set on arrival and cleared once the frog has walked clear of the doorway.
+   * Without it you arrive on top of the trigger you just used and bounce
+   * straight back through it.
+   */
+  let transitionArmed = false;
 
   const progress: Progress = {
     get coins(): number {
@@ -207,6 +234,12 @@ export function createGame(
     addKey(): void {
       keys++;
     },
+    get hasShield(): boolean {
+      return hasShield;
+    },
+    grantShield(): void {
+      hasShield = true;
+    },
     spendKey(): boolean {
       if (keys <= 0) return false;
       keys--;
@@ -228,13 +261,16 @@ export function createGame(
     input,
     rng,
     loop,
-    level,
+    get level(): Level {
+      return level;
+    },
     player,
     enemies,
     pickups,
     shrines,
     grapplePosts,
     gates,
+    levers,
     hud,
     progress,
 
@@ -249,6 +285,11 @@ export function createGame(
 
     spawnFx(kind: FxKind, position: THREE.Vector3, dir?: THREE.Vector3): void {
       fx.spawn(kind, position, dir);
+    },
+
+    changeZone(zone: ZoneId, entry: string): void {
+      if (level.id === zone) return;
+      pendingZone = { zone, entry };
     },
 
     dropCoins(amount: number, position: THREE.Vector3): void {
@@ -314,6 +355,60 @@ export function createGame(
       enemy.dispose();
       enemies.splice(i, 1);
     }
+  }
+
+  function teardownWorld(): void {
+    for (const enemy of enemies) enemy.dispose();
+    enemies.length = 0;
+    for (const pickup of pickups) pickup.dispose();
+    pickups.length = 0;
+    ghost = null;
+    for (const shrine of shrines) shrine.dispose();
+    shrines.length = 0;
+    for (const post of grapplePosts) post.dispose();
+    grapplePosts.length = 0;
+    for (const gate of gates) gate.dispose();
+    gates.length = 0;
+    for (const lever of levers) lever.dispose();
+    levers.length = 0;
+  }
+
+  /**
+   * The zone swap. Everything the old zone owned goes, the new one is built,
+   * and the frog is stood at the named entry - which is always somewhere it can
+   * see where it came from, so a transition never disorients.
+   */
+  function applyZoneChange(zone: ZoneId, entry: string): void {
+    teardownWorld();
+    level.dispose();
+
+    level = createZone(rng, zone);
+    scene.add(level.root);
+    spawnEnemies();
+    spawnProps();
+
+    const arrival = level.entries[entry] ?? level.playerStart;
+    checkpoint = arrival.clone();
+    player.respawn(arrival);
+    transitionArmed = false;
+  }
+
+  /**
+   * Doors are two-way once open. Standing in one sends you through; you have to
+   * step off it before it will take you again.
+   */
+  function tickTransitions(): void {
+    if (!player.alive) return;
+    const door = gates.find((gate) => gate.id === 'belfry' && gate.open);
+    if (door === undefined) return;
+    const near = door.inRange(player.position);
+    if (!near) {
+      transitionArmed = true;
+      return;
+    }
+    if (!transitionArmed) return;
+    transitionArmed = false;
+    ctx.changeZone(level.id === 'downs' ? 'belfry' : 'downs', level.id === 'downs' ? 'downs' : 'belfry');
   }
 
   function refillEnemies(): void {
@@ -406,7 +501,18 @@ export function createGame(
     cullDead();
     tickPickups(dt);
     tickShrines(dt);
+    for (const lever of levers) lever.update(dt, ctx);
+    level.update?.(dt, ctx);
+    tickTransitions();
     tickRespawn(dt);
+
+    // Deferred to the end of the step: nothing above is still holding a
+    // reference into the arrays a swap is about to empty.
+    if (pendingZone !== null) {
+      const { zone, entry } = pendingZone;
+      pendingZone = null;
+      applyZoneChange(zone, entry);
+    }
 
     // The HUD is told the truth every step and animates toward it on its own
     // clock, so a hit that lands during a freeze is already on the paper when
@@ -513,17 +619,7 @@ export function createGame(
       hud.dispose();
       fx.dispose();
 
-      for (const enemy of enemies) enemy.dispose();
-      enemies.length = 0;
-      for (const pickup of pickups) pickup.dispose();
-      pickups.length = 0;
-      ghost = null;
-      for (const shrine of shrines) shrine.dispose();
-      shrines.length = 0;
-      for (const post of grapplePosts) post.dispose();
-      grapplePosts.length = 0;
-      for (const gate of gates) gate.dispose();
-      gates.length = 0;
+      teardownWorld();
       player.dispose();
 
       level.dispose();

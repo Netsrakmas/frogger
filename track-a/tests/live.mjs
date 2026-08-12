@@ -219,8 +219,8 @@ async function main() {
     check(
       'and the on-screen controls appear there',
       `${mobile.touchButtons} buttons`,
-      '5',
-      mobile.touchButtons === 5,
+      '6',
+      mobile.touchButtons === 6,
     );
     check(
       'no console errors on mobile either',

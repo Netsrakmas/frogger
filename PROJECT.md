@@ -1,6 +1,6 @@
 # Frogger — a Tunic-like with a frog
 
-**Phase:** 2 — build (Track A, milestones A1-A4 done; next is A5 the Sunken Belfry)
+**Phase:** 2 — build (Track A, milestones A1-A5 done; next is A6 the Heron)
 **Stack:** dual-track: (A) Vite + Three.js + TS (primary), (B) Godot 4 web export (comparison)
 **Repo:** github.com/netsrakmas/frogger
 **Live:** https://netsrakmas.github.io/frogger/ — deployed 2026-08-12 (GitHub reports success; see the ship note on verification)
@@ -12,7 +12,7 @@ A triple-A-polish demo of a Tunic-like isometric action-adventure starring a fro
 ## Phase log
 - 0 idee — skipped by explicit user decision (verdict: build). User committed to building via gauntlet prompting.
 - 1 plan — done. RESEARCH.md (3 angles: spec craft, Tunic visual grammar, architecture + feel numbers) and PROMPT.md (dual-track master spec, milestones A1–A10, B1–B5, C1) written. Spec-only per user request; build not started.
-- 2 build — in progress. **A1–A4 done** (see milestone log). Next: A5 dungeon.
+- 2 build — in progress. **A1–A5 done** (see milestone log). Next: A6 boss.
 - 3 art — not started
 - 4 test — not started
 - 5 ship — deployed via Actions. Publish confirmed by GitHub; end-to-end live check still owed (this container cannot reach github.io).
@@ -111,6 +111,37 @@ touch roll is buffered, consumed and i-framed exactly like a keyed one.
   the roll/attack/tongue/lock-on buttons each entered their real state.
 - The layer does not mount on a desktop pointer at all (asserted: 0 buttons in
   the DOM), so it can never swallow a mouse click.
+
+**A5 — The Sunken Belfry — DONE 2026-08-12.** Gate: `tests/a5.mjs` **19/19**.
+All earlier gates green (feel 51/51, a2 28/28, a3 16/16, a4 15/15,
+controls 14/14, gate 25/25).
+- **Second zone, with real zone plumbing**: the belfry door is a way in, not an
+  animation. A zone swap tears the old world down and builds the new one, and
+  is deferred to the end of a step so nothing swaps underneath a loop that is
+  still walking it. Three descending floors in one shaft (landing / flooded
+  ring / vault), verified strictly descending.
+- **The sluice puzzle**: four levers on pillars out in water the frog cannot
+  cross. The gate measures that all four can be thrown *with the tongue from
+  the walkway*, and that the way down opens only once the basin has actually
+  drained. The signature verb is the solution to a room, not just to a fight.
+- **Shield + block**: guard costs 0.3 stamina per blow, only covers the front,
+  and an empty bar lets the hit through for MORE than never guarding. Measured
+  with front/back aimed probes rather than a fixed direction.
+- **Drowned Knight**: swings twice, and the second blow lands while a roll is
+  still recovering — the rhythm the Shield answers. 43 f opening telegraph.
+- Camera-side walls are cut to a parapet (collision stays full height). Without
+  it the fixed -40 deg camera sits behind the tower wall and the room is
+  literally unviewable — the diorama cutaway Monument Valley and Tunic use.
+- **Real bug fixed on the way**: gates were visual-only. Bramble and the belfry
+  door could be walked straight through, so every lock in A4 was decorative.
+  Shut gates now push the frog out analytically.
+- **Second real bug**: one "camera-hidden" secret was hidden by a *randomly
+  placed* prop. Changing the rng stream moved the prop and the secret stood in
+  the open. Cover is authored now, and only where terrain does not already do
+  the job — a first attempt that blanket-placed blocks dropped one onto the
+  plateau and slowed the movement gate to 4.72 u/s.
+- Known flake: a3's grapple row failed once in ~6 runs (timing on the pull
+  window); 16/16 on three consecutive runs since.
 
 ## Open questions
 - Which of the two stacks wins after comparison (decided in/after phase 2).

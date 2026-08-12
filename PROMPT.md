@@ -129,6 +129,7 @@ round + squat vs. the world's angular geometry.
 | Attack | J, Z or left mouse | X / square | attack button (largest, under the thumb) |
 | Tongue | K or X | Y / triangle | tongue button |
 | Lock-on | L, C or right mouse | LT or right-stick click | lock-on button |
+| Block | F or Q (hold) | LB (hold) | block button (hold) |
 | Interact | E or Enter | A / cross | interact button |
 
 Touch mounts only on a coarse pointer (or `?touch=1`); on a desktop the layer
@@ -336,7 +337,7 @@ Track A first to M4, then Track B starts — A's code is the reference for B's f
   waterfall secret, shrines, key + belfry door, Spitter Fly, 2 pages placed (pickup
   = toast only for now). *Gate: full-zone walkthrough script; secret-path
   screenshots; draw-call budget held.*
-- [ ] **A5 — The Sunken Belfry.** 3 floors, water-level puzzle, Drowned Knight,
+- [x] **A5 — The Sunken Belfry.** 3 floors, water-level puzzle, Drowned Knight,
   Shield + block, dungeon palette/lighting recipe, 1 page. *Gate: dungeon clearable
   scripted + by hand; palette identity screenshot pair (overworld vs dungeon).*
 - [ ] **A6 — The Heron.** 3-phase boss per §6, boss HP UI, credits + tally, final

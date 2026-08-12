@@ -190,6 +190,21 @@ export const PLAYER_IFRAMES_AFTER_HIT = 0.6; // s
  */
 export const ENEMY_STAGGER = f(15); // 0.25 s
 
+// ------------------------------------------------------------------ shield
+/**
+ * Guarding is not free and it is not a wall. It turns a blow aside for stamina,
+ * and a bar emptied by blocking leaves you wide open - so the Shield converts
+ * damage into a resource problem rather than removing the problem.
+ */
+export const BLOCK_ARC = (100 * Math.PI) / 180;
+export const BLOCK_STAMINA_PER_HIT = 0.3;
+/** A blow you had no stamina left for goes through, and staggers you harder. */
+export const GUARD_BREAK_STAGGER = f(30);
+export const BLOCK_KNOCKBACK = 0.7; // u, much less than taking it clean
+export const BLOCK_HITSTOP = f(5);
+/** Moving with the guard up is a trudge; that is the cost of holding it. */
+export const BLOCK_MOVE_SCALE = 0.45;
+
 // ------------------------------------------------------------------ tongue
 export const TONGUE_RANGE = 7.0; // u
 export const TONGUE_EXTEND_SPEED = 35.0; // u/s
@@ -348,6 +363,27 @@ export const GLOB_RADIUS = 0.18; // u
 export const COIN_DROP_SPITTER = 5;
 /** What a secret with no unique item in it is worth. */
 export const SECRET_COINS = 12;
+
+/**
+ * A frog knight that drowned here. It is the Shield's teacher: two telegraphed
+ * sword blows in a row, the first of which you can roll and the second of which
+ * arrives while a roll is still recovering. Guarding is the clean answer.
+ */
+export const DROWNED_KNIGHT: EnemyStats = {
+  hp: 6,
+  moveSpeed: 2.2,
+  aggroRange: 10.0,
+  attackRange: 2.0,
+  telegraph: f(38),
+  active: f(8),
+  recovery: f(30),
+  damage: 2,
+  mass: 'medium',
+};
+/** The second blow of the pair, close behind the first. */
+export const KNIGHT_FOLLOWUP_GAP = f(16);
+export const KNIGHT_TURN_RATE = 3.2; // rad/s
+export const COIN_DROP_KNIGHT = 11;
 
 // ------------------------------------------------------------------- coins
 export const COIN_DROP_SPORELING = 4;

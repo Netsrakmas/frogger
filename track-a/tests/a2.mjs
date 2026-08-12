@@ -772,7 +772,15 @@ async function main() {
         const world = {
           enemies: c.enemies().map((e) => e.kind).sort().join('|'),
           shrines: c.shrines().map((s) => `${s.id}@${round(s.pos)}`).sort().join('|'),
-          pickups: c.pickupList().map((k) => `${k.kind}@${round(k.pos)}`).sort().join('|'),
+          // Coins are still falling when this snapshot is taken, so their
+          // positions are a function of WHEN it was taken, not of the seed.
+          // Their payout is checked properly in 8b; here only the fixed props.
+          pickups: c
+            .pickupList()
+            .filter((k) => k.kind !== 'coin')
+            .map((k) => `${k.kind}@${round(k.pos)}`)
+            .sort()
+            .join('|'),
         };
         // Kill the Sporeling through the real damage path, then get clear of
         // COIN_MAGNET_RANGE so the payout is measured on the ground rather
@@ -793,7 +801,16 @@ async function main() {
         // Coins integrate on the fixed simulation step, so once they have
         // settled their resting places are a property of the seed alone.
         await a.waitFor(() => false, 150);
-        const coins = c.pickupList().filter((k) => k.kind === 'coin');
+        // Only the coins this kill produced. The zone also has secret stashes
+        // lying about, and their offsets from a death spot that moves are a
+        // measure of where the frog died, not of the payout.
+        const coins = c
+          .pickupList()
+          .filter(
+            (k) =>
+              k.kind === 'coin' &&
+              Math.hypot(k.pos[0] - origin[0], k.pos[2] - origin[2]) < 4.0,
+          );
         return {
           world,
           payout: coins.length,

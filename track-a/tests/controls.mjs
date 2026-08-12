@@ -305,15 +305,15 @@ async function main() {
         ? `stick zone ${Math.round(layout.zone.w)}x${Math.round(layout.zone.h)}, ` +
           `${layout.buttons.length} buttons: ${layout.buttons.map((b) => b.label).join(', ')}`
         : 'no stick zone',
-      'stick + 5 buttons',
-      !!layout.zone && layout.buttons.length === 5,
+      'stick + 6 buttons',
+      !!layout.zone && layout.buttons.length === 6,
     );
     check(
       't2',
       'every verb has a button, and they are big enough for a thumb',
       layout.buttons.map((b) => `${b.label} ${b.size}px`).join(', '),
       'all >= 44px (the usual touch-target floor)',
-      layout.buttons.length === 5 && layout.buttons.every((b) => b.size >= 44),
+      layout.buttons.length === 6 && layout.buttons.every((b) => b.size >= 44),
     );
 
     // Drag the floating stick and check the frog goes where the thumb points.

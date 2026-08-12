@@ -35,6 +35,12 @@ import {
   COMBO_WINDOW_FROM,
   DECEL_TIME,
   KNOCKBACK_PLAYER,
+  BLOCK_ARC,
+  BLOCK_HITSTOP,
+  BLOCK_KNOCKBACK,
+  BLOCK_MOVE_SCALE,
+  BLOCK_STAMINA_PER_HIT,
+  GUARD_BREAK_STAGGER,
   LOCKON_DROP_RANGE,
   LUNGE_SLASH,
   LOCKON_CONE,
@@ -300,6 +306,8 @@ export function createPlayer(
   let lungeQueued = false;
   /** A one-off frame table that outranks the equipped weapon's, for the slash. */
   let overrideSwing: AttackFrames | null = null;
+  /** Guard up. Held, not toggled, and only while the Shield has been found. */
+  let blocking = false;
   let lungeLeft = 0;
   let lungeSpeed = 0;
   let knockSpeed = 0;
@@ -323,6 +331,9 @@ export function createPlayer(
   const hitDir = new THREE.Vector3();
   const swung = new Set<Damageable>();
   const swungGates = new Set<string>();
+  const pushOut = new THREE.Vector3();
+  /** Push-outs are positional, not velocity - they must not be scaled by dt. */
+  const dt0 = 0;
 
   const alive = (): boolean => state !== 'dead';
 
@@ -473,6 +484,32 @@ export function createPlayer(
     }
   }
 
+  /**
+   * Gates are drawn objects, not level geometry - the BVH is baked once and a
+   * thicket that opens mid-run cannot be cut out of it. So a shut gate is
+   * enforced here instead: an analytic push-out of its ground-plane disc, the
+   * same shape the level's own props would have had. Without this a bramble is
+   * scenery you can stroll through, and the lock it represents is a lie.
+   */
+  function resolveGates(ctx: GameContext): void {
+    for (const gate of ctx.gates) {
+      if (!gate.blocking) continue;
+      const dx = controller.position.x - gate.position.x;
+      const dz = controller.position.z - gate.position.z;
+      const reach = gate.blockRadius + PLAYER_RADIUS;
+      const distance = Math.hypot(dx, dz);
+      if (distance >= reach) continue;
+      if (distance <= TOUCHING) {
+        // Dead centre: shove along the frog's own facing rather than dividing
+        // by zero and teleporting it somewhere arbitrary.
+        pushOut.set(Math.sin(facing), 0, Math.cos(facing)).multiplyScalar(reach);
+      } else {
+        pushOut.set((dx / distance) * (reach - distance), 0, (dz / distance) * (reach - distance));
+      }
+      controller.move(pushOut, dt0);
+    }
+  }
+
   /** A lock survives only while its target is alive, present and in reach. */
   function updateLock(): void {
     if (lockTarget === null) return;
@@ -617,7 +654,17 @@ export function createPlayer(
    * frog is free.
    */
   function claimVerbs(ctx: GameContext, magnitude: number): void {
-    if (state === 'dead') return;
+    if (state === 'dead') {
+      blocking = false;
+      return;
+    }
+
+    // The guard is a held state, not a verb with frames: it is up whenever the
+    // button is down, the Shield has been found, and the frog is on its feet.
+    blocking =
+      ctx.progress.hasShield &&
+      ctx.input.isDown('block') &&
+      (state === 'idle' || state === 'move');
 
     // Toggle, not hold: a lock you have to keep a finger on competes with every
     // other verb on the hand.
@@ -674,7 +721,7 @@ export function createPlayer(
 
   /** Shared by idle and move: accelerate, decelerate, and turn into the stick. */
   function groundMovement(dt: number, magnitude: number): void {
-    const target = MOVE_SPEED * magnitude;
+    const target = MOVE_SPEED * magnitude * (blocking ? BLOCK_MOVE_SCALE : 1);
     if (target > speed) {
       speed = Math.min(target, speed + (MOVE_SPEED / ACCEL_TIME) * dt);
     } else {
@@ -910,6 +957,17 @@ export function createPlayer(
     model.visual.position.y = Math.abs(bob) * BOB_AMPLITUDE * gait;
   }
 
+  /**
+   * True if the guard is up AND the blow is coming at the front of it. A shield
+   * that covered the back would make positioning meaningless, which is the one
+   * thing this whole game is about.
+   */
+  function guardCovers(hit: HitInfo): boolean {
+    if (!blocking) return false;
+    const toAttacker = Math.atan2(-hit.direction.x, -hit.direction.z);
+    return Math.abs(wrapAngle(toAttacker - facing)) <= BLOCK_ARC;
+  }
+
   function takeHit(hit: HitInfo): boolean {
     if (!alive() || isInvulnerable()) return false;
 
@@ -917,6 +975,46 @@ export function createPlayer(
       knockDir.set(hit.direction.x, 0, hit.direction.z).normalize();
     } else {
       knockDir.set(-Math.sin(facing), 0, -Math.cos(facing));
+    }
+
+    // Guard first. With stamina to spend the blow is turned; with an empty bar
+    // it breaks through, and breaking through costs MORE than never guarding -
+    // that is what stops the shield being a button you simply hold forever.
+    if (guardCovers(hit)) {
+      const ctxGuard = ctxRef;
+      if (stamina >= BLOCK_STAMINA_PER_HIT) {
+        spendStamina(BLOCK_STAMINA_PER_HIT);
+        knockSpeed = (2 * BLOCK_KNOCKBACK) / PLAYER_HITSTUN;
+        squash = SQUASH_IMPACT;
+        if (ctxGuard !== null) {
+          ctxGuard.requestHitstop(BLOCK_HITSTOP);
+          ctxGuard.addTrauma(TRAUMA_HIT);
+          ctxGuard.spawnFx(
+            'guardSpark',
+            new THREE.Vector3(
+              controller.position.x + Math.sin(facing) * 0.5,
+              controller.position.y + FX_HEIGHT,
+              controller.position.z + Math.cos(facing) * 0.5,
+            ),
+            hit.direction.clone().negate(),
+          );
+        }
+        return false;
+      }
+      // Guard break: the hit lands, and the stun is longer than a clean one.
+      blocking = false;
+      invulnUntil = now + PLAYER_IFRAMES_AFTER_HIT;
+      hp = Math.max(0, hp - hit.damage);
+      if (hp <= 0) enterDead();
+      else {
+        enterHitstun();
+        stateTime = -GUARD_BREAK_STAGGER + PLAYER_HITSTUN;
+      }
+      if (ctxGuard !== null) {
+        ctxGuard.addTrauma(TRAUMA_PLAYER_HURT);
+        ctxGuard.requestHitstop(hit.hitstop);
+      }
+      return true;
     }
 
     const multiplier = zeroStaminaLatched ? ZERO_STAMINA_DMG_MULT : 1;
@@ -990,6 +1088,9 @@ export function createPlayer(
     get tongueReach(): number {
       return tongueReach;
     },
+    get blocking(): boolean {
+      return blocking;
+    },
 
     equip(next: WeaponId): void {
       weapon = next;
@@ -1041,6 +1142,7 @@ export function createPlayer(
 
       displacement.set(velocity.x * dt, 0, velocity.z * dt);
       controller.move(displacement, dt);
+      resolveGates(ctx);
 
       present(ctx, dt);
       presentTongue();

@@ -23,6 +23,7 @@ import { MAX_SLOPE, STEP_HEIGHT } from '../core/constants';
 import type { Level, Rng, SpawnPoint } from '../core/types';
 import type { PaletteRole } from '../render/palette';
 import { material } from '../render/materials';
+import { TO_CAMERA } from './viewaxis';
 
 // --------------------------------------------------------------- bvh install
 // three-mesh-bvh extends three's prototypes rather than subclassing, so this
@@ -31,7 +32,7 @@ import { material } from '../render/materials';
 
 let bvhInstalled = false;
 
-function installBvh(): void {
+export function installBvh(): void {
   if (bvhInstalled) return;
   THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
   THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -200,6 +201,14 @@ interface Secret {
   z: number;
   /** Hidden by geometry between the camera and the spot, not by a lock. */
   occluded: boolean;
+  /**
+   * Needs a mass placed in front of it. Most occluded secrets are hidden by
+   * terrain that is already there for its own reasons - the plateau hides two
+   * of them - and dropping a block in front of those would just be furniture in
+   * the middle of the play space. Only the one with nothing naturally in the
+   * way gets built cover, and A4's gate re-measures all three either way.
+   */
+  cover?: boolean;
   reward: string;
 }
 
@@ -207,7 +216,7 @@ const SECRETS: readonly Secret[] = [
   // 1. Behind the waterfall on the plateau's face: the Sword.
   { id: 'waterfall', x: -10.5, z: -12.4, occluded: true, reward: 'sword' },
   // 2. The hollow behind the great ruin, invisible from the fixed camera.
-  { id: 'ruinHollow', x: -14.2, z: 6.4, occluded: true, reward: 'page:0' },
+  { id: 'ruinHollow', x: -14.2, z: 6.4, occluded: true, cover: true, reward: 'page:0' },
   // 3. Meadow in the plateau's shadow. Standing just west of the mesa, this
   //    ground is behind 2.4 u of rock on the camera's view axis and simply is
   //    not drawn until you walk into it - the orthographic projection means it
@@ -222,6 +231,20 @@ const SECRETS: readonly Secret[] = [
 ];
 
 const SWORD_SPOT = { x: SECRETS[0].x, z: SECRETS[0].z };
+
+/**
+ * Authored cover. Every secret marked `occluded` gets a deliberate mass placed
+ * between it and the camera, rather than relying on a randomly scattered tree
+ * happening to land there - which is exactly how the 'ruinHollow' secret
+ * silently stopped being hidden the first time the generator's seed stream
+ * moved. Cover is placed on the ground plane along TO_CAMERA, so it stays
+ * correct for as long as the camera angle is what section 2 says it is.
+ */
+const COVER_OFFSET = 3.4;
+const COVER_WIDTH = 6.0;
+const COVER_HEIGHT = 4.2;
+const COVER_DEPTH = 3.0;
+const COVER_BURY = 0.5;
 const BRAMBLE_SPOTS: readonly { id: string; x: number; z: number }[] = [
   { id: 'thicket', x: 11.6, z: 7.6 },
 ];
@@ -351,7 +374,7 @@ interface Spot {
 
 // --------------------------------------------------------------------- level
 
-export function createLevel(rng: Rng): Level {
+export function createDowns(rng: Rng): Level {
   installBvh();
 
   const height = createHeightField(rng);
@@ -627,6 +650,26 @@ export function createLevel(rng: Rng): Level {
     );
   }
 
+  // ------------------------------------------------------------------ cover
+  // A deliberate mass in front of the one camera-hidden secret that has no
+  // terrain of its own to hide behind. Placed AFTER the props so nothing
+  // scattered can be relied on - relying on a random tree is exactly how this
+  // secret silently stopped being hidden when the seed stream moved.
+  for (const secret of SECRETS) {
+    if (!secret.occluded || secret.cover !== true) continue;
+    const cx = secret.x + TO_CAMERA.x * COVER_OFFSET;
+    const cz = secret.z + TO_CAMERA.z * COVER_OFFSET;
+    addSolid(
+      place(
+        new THREE.BoxGeometry(COVER_WIDTH, COVER_HEIGHT, COVER_DEPTH),
+        cx,
+        height(cx, cz) + COVER_HEIGHT * 0.5 - COVER_BURY,
+        cz,
+      ),
+      'ruinCool',
+    );
+  }
+
   // -------------------------------------------------------------------- rim
   // Full-length bars, not inset ones: four bars that stop at the inset leave a
   // 0.5 u diagonal notch at each corner, which is almost exactly a frog wide.
@@ -790,10 +833,21 @@ export function createLevel(rng: Rng): Level {
   });
 
   return {
+    id: 'downs',
     root,
     collider,
     spawns,
     playerStart,
+    // Coming back up out of the tower puts you on the doorstep, facing the
+    // meadow - never inside the door you just came through.
+    entries: {
+      start: playerStart.clone(),
+      belfry: new THREE.Vector3(
+        DOOR_SPOT.x,
+        height(DOOR_SPOT.x, DOOR_SPOT.z + 2.6),
+        DOOR_SPOT.z + 2.6,
+      ),
+    },
     secrets: SECRETS.map((secret) => ({
       id: secret.id,
       occluded: secret.occluded,
