@@ -452,6 +452,8 @@ export interface GameSample {
   manualOpen: boolean;
   manualSpread: number;
   paused: boolean;
+  /** Whether the post chain is running. A8's readability check turns it off. */
+  post: boolean;
   keys: number;
   hasShield: boolean;
   blocking: boolean;
@@ -534,6 +536,16 @@ export interface TestApi {
    * a sign that says nothing.
    */
   signs(): { id: string; pos: [number, number, number]; strokes: number }[];
+  /** Turn the whole post chain on or off, live. */
+  setPost(enabled: boolean): void;
+  /**
+   * Take the leaf canopy away. It is never drawn, so the only way to prove the
+   * dapple on the ground is its shadow is to remove it and watch the ground go
+   * flat.
+   */
+  setCanopy(enabled: boolean): void;
+  /** Bloom alone, so it can be measured without the rest of the chain moving. */
+  setBloom(enabled: boolean): void;
 }
 
 declare global {

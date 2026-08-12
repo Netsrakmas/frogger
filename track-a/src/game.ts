@@ -49,6 +49,10 @@ import { createFx } from './render/fx';
 import { createLighting } from './render/lighting';
 import { disposeMaterials } from './render/materials';
 import { createRenderer } from './render/renderer';
+import type { PostKit } from './render/post';
+import { createPost } from './render/post';
+import type { Canopy } from './render/canopy';
+import { createCanopy } from './render/canopy';
 import { createCameraRig } from './world/camera';
 import { createZone } from './world/zones';
 import { createLever } from './world/lever';
@@ -73,6 +77,10 @@ export interface Game {
   readonly ctx: GameContext;
   /** The booklet, exposed so the test hook can read it without a DOM query. */
   readonly manual: Manual;
+  /** The post chain, exposed so the gate can turn it off and look again. */
+  readonly post: PostKit;
+  /** The leaf canopy, exposed for the same reason. */
+  readonly canopy: Canopy;
   readonly loop: Loop;
   readonly renderer: THREE.WebGLRenderer;
   readonly canvas: HTMLCanvasElement;
@@ -145,6 +153,7 @@ export function createGame(
   scene.add(level.root);
 
   const cameraRig = createCameraRig(viewportWidth(), viewportHeight());
+  const post = createPost(renderer, scene, cameraRig.camera);
   // Pointer buttons belong to the canvas; keys, blur and pad stay on window.
   const input = createInput(canvas);
   const hud = createHud(hudParent, rng);
@@ -153,6 +162,8 @@ export function createGame(
   // Mounts only on a coarse pointer; on a desktop this is inert and invisible.
   const touch = createTouchControls(hudParent, input);
   const fx = createFx(scene, rng);
+  // Never drawn, always casting: the dapple on the ground is a real shadow.
+  const canopy = createCanopy(scene, rng);
   const player = createPlayer(scene, level, rng);
 
   const enemies: Enemy[] = [];
@@ -676,6 +687,10 @@ export function createGame(
    */
   function render(_alpha: number): void {
     pumpInput();
+    // Counters are reset here rather than by three, once per FRAME, so a
+    // measurement taken between frames covers the shadow pass, the scene and
+    // every post pass together. See renderer.ts.
+    renderer.info.reset();
     const dt = loop.realDelta;
 
     fx.update(dt);
@@ -684,8 +699,10 @@ export function createGame(
     // The shadow frustum has to be current for the frame being drawn, not the
     // one before it, or the fitted 30x30 box lags the frog by a frame.
     lighting.update(player.position);
+    // Present time, not sim: the wind does not stop for a hitstop.
+    canopy.update(loop.presentTime, player.position);
 
-    renderer.render(scene, cameraRig.camera);
+    post.render(scene, cameraRig.camera);
     emit(frameListeners);
   }
 
@@ -704,6 +721,7 @@ export function createGame(
     const height = viewportHeight();
     rendererKit.resize(width, height);
     cameraRig.resize(width, height);
+    post.setSize(width, height);
   }
 
   // One observer, not a window listener plus a DPR watcher: the canvas parent
@@ -718,6 +736,8 @@ export function createGame(
   return {
     ctx,
     manual,
+    post,
+    canopy,
     loop,
     renderer,
     canvas,
@@ -764,6 +784,8 @@ export function createGame(
 
       teardownWorld();
       player.dispose();
+      canopy.dispose();
+      post.dispose();
 
       level.dispose();
       level.root.removeFromParent();

@@ -1,6 +1,6 @@
 # Frogger — a Tunic-like with a frog
 
-**Phase:** 2 — build (Track A, milestones A1-A7 done; next is A8 render pass)
+**Phase:** 2 — build (Track A, milestones A1-A7 done; A8 render pass IN PROGRESS at 13/15)
 **Stack:** dual-track: (A) Vite + Three.js + TS (primary), (B) Godot 4 web export (comparison)
 **Repo:** github.com/netsrakmas/frogger
 **Live:** https://netsrakmas.github.io/frogger/ — deployed 2026-08-12 (GitHub reports success; see the ship note on verification)
@@ -12,7 +12,7 @@ A triple-A-polish demo of a Tunic-like isometric action-adventure starring a fro
 ## Phase log
 - 0 idee — skipped by explicit user decision (verdict: build). User committed to building via gauntlet prompting.
 - 1 plan — done. RESEARCH.md (3 angles: spec craft, Tunic visual grammar, architecture + feel numbers) and PROMPT.md (dual-track master spec, milestones A1–A10, B1–B5, C1) written. Spec-only per user request; build not started.
-- 2 build — in progress. **A1–A7 done** (see milestone log). Next: A8 render pass.
+- 2 build — in progress. **A1–A7 done**, A8 partially done (see milestone log).
 - 3 art — not started
 - 4 test — not started
 - 5 ship — deployed via Actions. Publish confirmed by GitHub; end-to-end live check still owed (this container cannot reach github.io).
@@ -252,6 +252,57 @@ a3 16/16, a4 15/15, a5 19/19, a6 20/20, controls 14/14.
   which told me a count had changed and nothing about whether the right buttons
   were there; it names the seven verbs now, so a button going MISSING still
   fails it. Neither was a defect in the game, and neither was papered over.
+
+**A8 — Render pass — NOT DONE. Gate `tests/a8.mjs` stands at 13/15.**
+The code is in and four genuine render defects were found and fixed by it; two
+checks in the gate remain unresolved and A8's box in PROMPT.md is deliberately
+still unticked.
+
+- **What landed:** the pmndrs post chain as ONE merged EffectPass (bloom, ACES,
+  vignette, additive sky gradient, SMAA); an animated leaf cookie that is a real
+  shadow rather than a texture; the no-pure-black floor; honest draw-call
+  accounting. 90 draw calls with post on against the 150 budget, 64 without.
+- **Four real defects the gate caught:**
+  1. **The composer silently dropped tone mapping.** three only applies
+     `renderer.toneMapping` when drawing to the CANVAS; the first thing a
+     composer does is render to a target. The meadow survived it because it is
+     bright. The belfry went to **rgb(6,6,4)** - a black screen with a HUD
+     floating on it. ACES lives in the chain now, and the renderer's own ACES is
+     handed back whenever the chain is switched off.
+  2. **The canopy cast nothing.** three renders the shadow pass with
+     `shadowSide`, which defaults to BackSide for a FrontSide material, so 150
+     flat leaves whose front faces were turned toward the light were back-face
+     culled out of the shadow map. It changed the ground's contrast by 0.6 of a
+     luma step - which is to say it did nothing.
+  3. **No floor under the darks.** A vignette will multiply a dark dungeon
+     corner to zero however carefully the toon ramp was tuned, so section 2's
+     "no pure black anywhere" now has one place that guarantees it.
+  4. **Emissive materials were too dim to bloom.** `EMISSIVE_INTENSITY` was 0.9
+     under a comment claiming it was "bright enough to clear a 0.85 threshold".
+     dungeonGlow's linear luminance is 0.638 and gold's is 0.571, so nothing in
+     the game had ever crossed the cut. Now 2.0, and the constant sits beside
+     BLOOM_THRESHOLD because the two only mean anything together.
+- **What is unresolved (b1/b2, bloom discipline).** Measuring a small halo is
+  harder than it looks and three attempts each failed differently, which is
+  worth recording:
+  * counting pixels over a fixed brightness missed a CYAN halo entirely -
+    dungeonGlow's red channel is 111 and can never reach 250;
+  * mean luma over the whole frame drowned a small bright source in 900x540
+    pixels of unchanged meadow (44.38 with bloom, 44.38 without - the same
+    number twice);
+  * counting changed pixels between two shots measures the game ANIMATING
+    between them: 38% of the frame moves in a second and a bit of idle bob,
+    pickup spin and drifting dapple.
+  The measurement wants the world frozen for both shots. A7's pause can do that,
+  but its overlay covers the screen, so this needs a freeze hook that stops the
+  sim without drawing anything - about an hour of work, not attempted here.
+- Also worth knowing: three's ACES and postprocessing's ACES are different fits,
+  not the same curve at different exposures. Matching them with a single scale
+  was tried (1/0.6, three's own constant) and lands the meadow at luma 202
+  against the fallback's 160 while STILL leaving the belfry darker. The chain's
+  curve is the shipping look; the fallback's job is to stay readable, and the
+  gate asserts exactly that and nothing stronger.
+- A9 (juice + audio) and A10 (release candidate) are not started.
 
 ## Open questions
 - Which of the two stacks wins after comparison (decided in/after phase 2).

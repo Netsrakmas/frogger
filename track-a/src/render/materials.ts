@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import type { WebGLProgramParametersWithUniforms } from 'three';
 import type { PaletteRole } from './palette';
 import { color, inkColor } from './palette';
+import { EMISSIVE_INTENSITY } from '../core/constants';
 
 // ------------------------------------------------------------- style tuning
 // Render-look numbers, not gameplay tunables, so they live with the kit that
@@ -31,8 +32,7 @@ const RAMP_CURVE = 1.5;
 const SHADOW_TINT = 0.62;
 /** Tint fades out as the band brightens - only shadows go cool. */
 const TINT_FALLOFF = 1.4;
-/** Bright enough that gold and dungeonGlow clear a 0.85 bloom threshold. */
-const EMISSIVE_INTENSITY = 0.9;
+
 const OUTLINE_THICKNESS = 0.03;
 /** Vertices within 1e-4 u count as the same corner when welding outline normals. */
 const WELD_PRECISION = 1e4;

@@ -48,6 +48,13 @@ export function createRenderer(canvasParent: HTMLElement): RendererKit {
   // silent (section 10's zero-console gate) with identical output.
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
+  // The post chain issues several renders per frame, and three resets its
+  // counters on EVERY one of them - so with post on, `info.render.calls` would
+  // report the final effect pass's single fullscreen triangle and the 150-call
+  // budget would pass by measuring nothing. Manual reset once per frame instead
+  // (game.ts render()), so the number covers the whole frame.
+  renderer.info.autoReset = false;
+
   const canvas = renderer.domElement;
   // Layout size is CSS-driven; setSize below only ever touches the backing
   // store, so a DPR change never fights the page for the element's box.

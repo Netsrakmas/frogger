@@ -521,3 +521,52 @@ export const FOG_NEAR = 26;
 export const FOG_FAR = 70;
 /** Additive vertical screen gradient strength (PROMPT.md section 8). */
 export const SCREEN_GRADIENT_STRENGTH = 0.12;
+
+// ------------------------------------------------------------- render pass
+// Section 8's numbers. Look, not gameplay - but they live here because the
+// same rule applies: one place, no inlining.
+
+/** Bloom fires only above this luminance, so glow keeps meaning something. */
+export const BLOOM_THRESHOLD = 0.85;
+/**
+ * How hard the luminescent roles emit. Coupled to BLOOM_THRESHOLD and kept
+ * beside it for that reason: a threshold is only a design rule if something in
+ * the game actually crosses it.
+ *
+ * This used to be 0.9, under a comment claiming it was "bright enough that gold
+ * and dungeonGlow clear a 0.85 bloom threshold". It was not, and there was no
+ * bloom in the build to contradict it. dungeonGlow's linear luminance is 0.638
+ * and gold's is 0.571, so at 0.9 neither ever reached the cut and the belfry
+ * measured a mean luma of 44.38 with bloom and 44.38 without - the same frame
+ * twice. Above 1.0 they emit like light sources, which is the whole point of
+ * marking them emissive.
+ */
+export const EMISSIVE_INTENSITY = 2.0;
+export const BLOOM_SMOOTHING = 0.12;
+export const BLOOM_INTENSITY = 0.9;
+export const BLOOM_RADIUS = 0.62;
+export const VIGNETTE_DARKNESS = 0.25;
+export const VIGNETTE_OFFSET = 0.32;
+/** Fullscreen additive vertical gradient: hazeSky at the top of the frame. */
+export const GRADIENT_STRENGTH = 0.12;
+/**
+ * Section 2 rule 5's floor, as a fraction of dungeonDark. Nothing in a finished
+ * frame may be pure black, and the end of the post chain is the only place that
+ * can promise it - a vignette will happily multiply a dark dungeon corner to
+ * zero however carefully the toon ramp was tuned.
+ */
+export const BLACK_FLOOR = 0.16;
+
+
+/**
+ * The leaf cookie. A canopy of scattered leaves hanging over the meadow that
+ * is never drawn but always casts, so the dapple on the ground is a REAL
+ * shadow from the one key light rather than a texture pretending to be one.
+ */
+export const CANOPY_HEIGHT = 12.0; // u above the ground
+export const CANOPY_SPAN = 64.0; // u square
+export const CANOPY_LEAVES = 150;
+export const CANOPY_LEAF_MIN = 1.1; // u
+export const CANOPY_LEAF_MAX = 2.6; // u
+/** Drift speed, u/s. Slow enough to read as wind, not as a moving light. */
+export const CANOPY_DRIFT = 0.35;

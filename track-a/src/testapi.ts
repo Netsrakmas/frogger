@@ -219,6 +219,7 @@ export function createTestApi(game: Game): TestApi {
       manualOpen: game.manual.open,
       manualSpread: game.manual.spread,
       paused: ctx.loop.paused,
+      post: game.post.enabled,
       keys: ctx.progress.keys,
       gatesOpen: ctx.gates.filter((gate) => gate.open).length,
       zone: ctx.level.id,
@@ -344,5 +345,17 @@ export function createTestApi(game: Game): TestApi {
     hiddenFromCamera,
     pickupList,
     signs,
+
+    setPost(enabled: boolean): void {
+      game.post.setEnabled(enabled);
+    },
+
+    setCanopy(enabled: boolean): void {
+      game.canopy.mesh.visible = enabled;
+    },
+
+    setBloom(enabled: boolean): void {
+      game.post.setBloom(enabled);
+    },
   };
 }
