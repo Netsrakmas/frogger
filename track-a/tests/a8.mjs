@@ -475,11 +475,29 @@ async function main() {
     // time, and then the ONLY thing that differs between the two shots is the
     // bloom toggle - so the changed pixels ARE the halo, exactly.
     await page.evaluate(async () => {
-      window.__croak.setPost(true);
-      window.__croak.setCanopy(false);
-      await window.__croak.frames(20);
-      window.__croak.setFrozen(true);
-      await window.__croak.frames(30);
+      const c = window.__croak;
+      c.setPost(true);
+      c.setCanopy(false);
+      await c.frames(20);
+      // Freeze at a CALM instant. An enemy mid-telegraph is a deliberate
+      // emitter - its tell material is emissive by design - and freezing the
+      // sim with one glowing beside the frog photographs a halo into the
+      // "empty meadow" frame. On a fast host that is exactly what happened:
+      // a Sporeling's tell put 0.589% of bloom into the emptiness baseline
+      // and b2's x2 margin died of it. Tiny always-on emitters (eyes, a
+      // distant post ring) stay: they are the honest floor the threshold has
+      // to clear anyway.
+      await window.__a8.waitFor((k) => {
+        const s = k.sample();
+        return k.enemies().every(
+          (e) =>
+            !e.alive ||
+            (e.state !== 'telegraph' && e.state !== 'attack') ||
+            Math.hypot(e.pos[0] - s.playerPos[0], e.pos[2] - s.playerPos[2]) > 12,
+        );
+      }, 600);
+      c.setFrozen(true);
+      await c.frames(30);
     });
     await page.waitForTimeout(700);
     const meadowBloomShot = await page.screenshot({ path: path.join(shots, 'a8-downs-bloom.png') });
