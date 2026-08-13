@@ -214,29 +214,48 @@ window.__a8 = {
     }
     return -1;
   },
+  /**
+   * Death-aware, and it retries. The frog spends the whole gate not fighting
+   * back while screenshots are taken, so by the time this runs it can be a
+   * hit from dead - and a death mid-helper teleports it home to its
+   * checkpoint, which silently turned "the belfry" into a screenshot of the
+   * meadow and failed v1 with two identical rooms. Every step now waits out
+   * a respawn and starts the attempt over instead of timing out into a lie.
+   */
   async enterBelfry() {
     const c = window.__croak;
     const a = window.__a8;
-    if (c.sample().zone === 'belfry') return true;
-    const key = c.pickupList().find((p) => p.kind === 'key');
-    if (key) {
-      c.teleportPlayer(key.pos[0], key.pos[1], key.pos[2]);
-      await a.waitFor((k) => k.sample().keys > 0, 300);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (c.sample().zone === 'belfry') return true;
+      await a.waitFor((k) => k.sample().playerState !== 'dead', 600);
+      if (c.sample().keys === 0 && !c.gates().some((g) => g.kind === 'door' && g.open)) {
+        const key = c.pickupList().find((p) => p.kind === 'key');
+        if (key) {
+          c.teleportPlayer(key.pos[0], key.pos[1], key.pos[2]);
+          await a.waitFor(
+            (k) => k.sample().keys > 0 || k.sample().playerState === 'dead',
+            300,
+          );
+        }
+      }
+      if (c.sample().playerState === 'dead') continue;
+      const door = c.gates().find((g) => g.kind === 'door');
+      if (!door) return false;
+      c.teleportPlayer(door.pos[0], door.pos[1], door.pos[2] + 1.8);
+      await c.frames(4);
+      for (let i = 0; i < 20 && !c.gates().some((g) => g.kind === 'door' && g.open); i++) {
+        c.press('interact');
+        await c.frames(1);
+        c.release('interact');
+        await c.frames(2);
+      }
+      if (c.sample().playerState === 'dead') continue;
+      c.teleportPlayer(door.pos[0], door.pos[1], door.pos[2] + 7.0);
+      await c.frames(8);
+      c.teleportPlayer(door.pos[0], door.pos[1], door.pos[2] + 1.2);
+      if ((await a.waitFor((k) => k.sample().zone === 'belfry', 400)) >= 0) return true;
     }
-    const door = c.gates().find((g) => g.kind === 'door');
-    if (!door) return false;
-    c.teleportPlayer(door.pos[0], door.pos[1], door.pos[2] + 1.8);
-    await c.frames(4);
-    for (let i = 0; i < 20 && !c.gates().some((g) => g.kind === 'door' && g.open); i++) {
-      c.press('interact');
-      await c.frames(1);
-      c.release('interact');
-      await c.frames(2);
-    }
-    c.teleportPlayer(door.pos[0], door.pos[1], door.pos[2] + 7.0);
-    await c.frames(8);
-    c.teleportPlayer(door.pos[0], door.pos[1], door.pos[2] + 1.2);
-    return (await a.waitFor((k) => k.sample().zone === 'belfry', 400)) >= 0;
+    return false;
   },
 };
 `;
@@ -516,6 +535,17 @@ async function main() {
     await page.waitForTimeout(1100);
     const belfryOn = await page.screenshot({ path: path.join(shots, 'a8-belfry-post.png') });
     const belfryTone = averageRgb(belfryOn);
+
+    // Named on its own: when entry fails, every belfry measurement below is a
+    // photograph of the wrong room, and the failure must say so rather than
+    // surfacing as a mysterious tone mismatch in v1.
+    check(
+      'z1',
+      'the drive into the belfry actually arrived',
+      belfry ? 'zone is belfry' : 'entry helper gave up - shots below are the meadow',
+      'arrived',
+      belfry === true,
+    );
 
     const FRAME = [0, 0, 1, 1];
     const meadowTouched = changedFraction(meadowBloomShot, meadowNoBloomShot, FRAME, 3);
