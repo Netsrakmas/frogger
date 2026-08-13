@@ -66,6 +66,12 @@ export interface AttackFrames {
   /** Half-angle of the damage arc, radians. */
   arc: number;
   reach: number;
+  /**
+   * How far above the attacker's feet this swing can connect. Almost every
+   * swing leaves it unset and takes STRIKE_REACH_UP; the arrival slash is the
+   * exception, because the thing the tongue anchored to may be hovering.
+   */
+  reachUp?: number;
 }
 
 export const LIGHT_ATK: AttackFrames = {
@@ -96,6 +102,19 @@ export const HEAVY_ATK: AttackFrames = {
 export const COMBO_WINDOW_FROM = f(7); // frames into the attack
 export const STICK_COMBO_LENGTH = 2;
 export const SWORD_COMBO_LENGTH = 3;
+
+// ------------------------------------------------------------- hit heights
+/**
+ * The vertical half of every melee overlap. The old checks were pure
+ * ground-plane discs, which meant a sword swung on the deck connected with a
+ * Heron hovering 1.75 u overhead and a Sporeling could bite a frog standing a
+ * whole floor above it. A blow reaches this far above the attacker's FEET...
+ */
+export const STRIKE_REACH_UP = 1.3; // u
+/** ...and this far below them, so a step or a low ledge never blocks a hit. */
+export const STRIKE_REACH_DOWN = 0.7; // u
+/** Default vertical extent of a hurt volume, measured up from the feet. */
+export const HURT_HEIGHT = 1.0; // u
 
 // ------------------------------------------------------------------ hitstop
 export const HITSTOP_LIGHT = f(4);
@@ -252,6 +271,11 @@ export const LUNGE_SLASH: AttackFrames = {
   knockback: 3.4,
   arc: LUNGE_SLASH_ARC,
   reach: LUNGE_SLASH_REACH,
+  // The one blow that climbs: the tongue is the game's anti-air verb, and the
+  // arrival slash is that verb cashing out. A hovering Heron (HERON_HOVER off
+  // the deck, body another two units up) must be inside this or phase two's
+  // whole loop - post, haul, anchor, slash - dies at the last link.
+  reachUp: 4.5,
 };
 
 // ------------------------------------------------------------------ lock-on
@@ -559,14 +583,40 @@ export const BLACK_FLOOR = 0.16;
 
 
 /**
- * The leaf cookie. A canopy of scattered leaves hanging over the meadow that
- * is never drawn but always casts, so the dapple on the ground is a REAL
- * shadow from the one key light rather than a texture pretending to be one.
+ * The cloud cookie. A field of cloud-shaped cutouts hanging over the meadow
+ * that is never drawn but always casts, so the moving shade on the ground is a
+ * REAL shadow from the one key light rather than a texture pretending to be
+ * one. Playtest rewrote this from a 150-leaf dapple: the leaves covered the
+ * ground in full-strength shadow shapes that read as neither leaves nor
+ * clouds, and "cloud shadows are far too heavy" was the fair verdict. Now it
+ * is a handful of distinct clouds, sparse enough that sun is the default, and
+ * their shadow is HALF shadow (see CANOPY_SHADOW_COVER).
  */
 export const CANOPY_HEIGHT = 12.0; // u above the ground
-export const CANOPY_SPAN = 64.0; // u square
-export const CANOPY_LEAVES = 150;
-export const CANOPY_LEAF_MIN = 1.1; // u
-export const CANOPY_LEAF_MAX = 2.6; // u
-/** Drift speed, u/s. Slow enough to read as wind, not as a moving light. */
-export const CANOPY_DRIFT = 0.35;
+export const CANOPY_SPAN = 64.0; // u square, the periodic tile
+/** Distinct clouds per tile. Few, so full sun stays the meadow's base state. */
+export const CANOPY_CLOUDS = 5;
+/** Puffs per cloud - overlapping discs that lobe the silhouette. */
+export const CANOPY_PUFFS_MIN = 6;
+export const CANOPY_PUFFS_MAX = 10;
+/** Puff radius, u. */
+export const CANOPY_PUFF_MIN = 1.5;
+export const CANOPY_PUFF_MAX = 2.9;
+/** Cloud half-extents: long axis and short axis of the puff scatter. */
+export const CANOPY_CLOUD_RX = 4.6; // u
+export const CANOPY_CLOUD_RZ = 2.3; // u
+/** Minimum distance between cloud centres, so the gaps stay big and sunny. */
+export const CANOPY_CLOUD_SPACING = 17.0; // u
+/** Drift speed, u/s. Cloud pace: visibly travelling, never a moving light. */
+export const CANOPY_DRIFT = 0.5;
+/**
+ * Fraction of a cloud's shadow-map footprint that actually occludes - the
+ * dither in its depth material. A shadow map is binary per texel, so this is
+ * the only way one caster can throw a PARTIAL shadow without touching every
+ * other shadow in the scene: the cloud is punched full of sub-texel holes,
+ * the PCF filter averages them, and the ground under a cloud keeps roughly
+ * (1 - cover) of its key light. Buildings and characters still cast at full
+ * strength, which is what keeps a cloud shadow reading as weather rather
+ * than as architecture.
+ */
+export const CANOPY_SHADOW_COVER = 10 / 16;

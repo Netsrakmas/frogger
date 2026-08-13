@@ -352,6 +352,53 @@ return (the belfry never had a return gate), and `spawnEnemies()` reading
 `boss`/`victory` above their declarations is fine (the declarations execute
 before the first call).
 
+### Playtest round (2026-08-13) — four defects from the user's hands-on pass
+
+The user played the A8 build and reported: cloud shadows far too heavy and not
+reading as clouds; height not mattering in combat; trees inside other objects;
+no story ("not a viable demo build"). All four addressed in one round, with
+PROMPT.md carrying the amendments:
+
+1. **Leaf-cookie → cloud cookie** (`render/canopy.ts`). The 150-leaf scatter
+   became ~5 distinct clouds per 64 u tile — lobed puff clusters, big discs
+   mid-run and small at the ends, toroidal spacing so the tiled sky keeps its
+   gaps. The heaviness fix is a dithered `customDepthMaterial`: a 4×4 Bayer
+   alpha cutout (`CANOPY_SHADOW_COVER = 10/16`, one cell per shadow texel,
+   world-planar UVs so overlapping puffs punch the SAME holes) makes the
+   cloud a partial occluder after PCF, while walls and characters still cast
+   full shadows. Measured: shaded ground keeps ~55–65 % of its light (old
+   dapple dropped it to the toon ramp's ~25 % dark band). `setCanopyPhase`
+   test hook pins the drift so a8 can hunt the phase that parks a cloud in
+   frame; d1/d2 rewritten around it (frozen A/B pairs, changed-fraction +
+   shaded-ratio, ratio asserted between 0.45 and 0.92).
+2. **Vertical hit rule** (`core/hits.ts`). One shared `inStrikeHeight`:
+   attacker swings from STRIKE_REACH_DOWN below its feet to reachUp above
+   (default STRIKE_REACH_UP 1.3), victim is feet→`hurtHeight` (default 1.0;
+   the Heron declares ~2.9). Applied to player strike/strikeGates + soft-lock
+   targeting, sporeling/knight/beetle strikes, thrown-body contacts, spitter
+   glob, heron stab/slam/feathers. Deliberate exemptions: the tongue (the
+   game's anti-air verb), the heron's gust (a downdraft ring — phase 2 gusts
+   from the hover), and the arrival slash, which carries
+   `LUNGE_SLASH.reachUp = 4.5` so the post→haul→anchor→slash loop can still
+   climb a Heron hovering at 1.75.
+3. **Scatter vs authored world** (`world/level.ts`). Placement now draws each
+   prop's dimensions FIRST, then rejection-samples a position against (a)
+   PLAY_KEEPOUT by centre, (b) a new STRUCTURE_KEEPOUT — built from the
+   authored tables themselves (wall, door, shrines, secrets, bramble, posts,
+   signs, cover block) — by footprint, and (c) other props by footprint
+   (canopy radius / box half-diagonal), with tree-tree grove overlap kept at
+   TREE_SPACING on purpose. Ruin-ruin and tree-ruin interpenetration is gone.
+4. **The story** (`ui/letter.ts` + game/main wiring + hud ending line). An
+   opening letter over the live meadow: previous owner's penscript hand + a
+   Croakic heading ("for whoever comes after") — whose book this was, what
+   the Heron took, why the frog, what done means; signed "- m", the same hand
+   as every margin note. Pauses the world exactly like the manual
+   (edge-triggered `letterOwnsPause`), any verb or tap dismisses in ONE
+   press. Suppressed only on explicit `?test=1` boots; `?letter=1` forces it
+   for a7's new story checks (s1–s4: up-at-boot + world held, drawn-not-
+   typeset, one-press dismissal + resume, plain-test boot clean). The ending
+   card now closes the loop in the same pen: "the sky is quiet again…".
+
 ## Open questions
 - Which of the two stacks wins after comparison (decided in/after phase 2).
 - **Live page not yet verified end-to-end.** The deploy is green and GitHub

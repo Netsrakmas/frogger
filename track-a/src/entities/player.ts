@@ -74,6 +74,7 @@ import {
   TURN_RATE,
   ZERO_STAMINA_DMG_MULT,
 } from '../core/constants';
+import { inStrikeHeight } from '../core/hits';
 import { makeOutline, material } from '../render/materials';
 import { createController } from '../physics/controller';
 
@@ -467,6 +468,13 @@ export function createPlayer(
     let bestDistance = Infinity;
     for (const target of ctx.damageablesFor('player')) {
       if (!target.alive) continue;
+      // A swing's soft lock never magnetizes toward something the blade
+      // cannot reach vertically - lunging at a hovering Heron and whiffing
+      // reads as a broken swing. The HARD lock (anyDirection) still sees it:
+      // locking onto a flier is how the tongue gets aimed at one.
+      if (!anyDirection && !inStrikeHeight(controller.position.y, target)) {
+        continue;
+      }
       const dx = target.position.x - controller.position.x;
       const dz = target.position.z - controller.position.z;
       const distance = Math.hypot(dx, dz);
@@ -489,6 +497,11 @@ export function createPlayer(
   function strikeGates(ctx: GameContext, frames: AttackFrames): void {
     for (const gate of ctx.gates) {
       if (!gate.blocking || swungGates.has(gate.id)) continue;
+      // A thicket is tall scenery: give it a generous interval so a swing
+      // from the small terrain bumps around it still counts as at it.
+      if (!inStrikeHeight(controller.position.y, { position: gate.position, hurtHeight: 2.0 })) {
+        continue;
+      }
       const dx = gate.position.x - controller.position.x;
       const dz = gate.position.z - controller.position.z;
       const distance = Math.hypot(dx, dz);
@@ -507,6 +520,11 @@ export function createPlayer(
     strikeGates(ctx, frames);
     for (const target of ctx.damageablesFor('player')) {
       if (!target.alive || swung.has(target)) continue;
+      // Height matters: a deck-level swing does not reach a hovering boss or
+      // an enemy a storey away. The arrival slash carries its own tall window.
+      if (!inStrikeHeight(controller.position.y, target, frames.reachUp)) {
+        continue;
+      }
 
       const dx = target.position.x - controller.position.x;
       const dz = target.position.z - controller.position.z;

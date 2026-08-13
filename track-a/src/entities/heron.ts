@@ -81,6 +81,7 @@ import {
   TRAUMA_BOSS_SLAM,
   TRAUMA_HIT,
 } from '../core/constants';
+import { inStrikeHeight } from '../core/hits';
 import { makeOutline, material } from '../render/materials';
 
 const TAU = Math.PI * 2;
@@ -417,6 +418,9 @@ export function createHeron(
   function stab(ctx: GameContext): void {
     for (const target of ctx.damageablesFor('enemy')) {
       if (!target.alive || struck.has(target)) continue;
+      // The beak stabs at its own footing. It only ever stabs from the deck,
+      // so this is symmetry with the player's own height rule, not a nerf.
+      if (!inStrikeHeight(pos.y, target)) continue;
       const dx = target.position.x - pos.x;
       const dz = target.position.z - pos.z;
       const distance = Math.hypot(dx, dz);
@@ -438,7 +442,11 @@ export function createHeron(
     }
   }
 
-  /** The wings. A ring, not a cone: it hits everywhere and hurts barely. */
+  /**
+   * The wings. A ring, not a cone: it hits everywhere and hurts barely.
+   * DELIBERATELY not height-gated: phase 2 gusts from the hover, and the gust
+   * is the downdraft reaching the deck - air, not a blade.
+   */
   function gust(ctx: GameContext): void {
     for (const target of ctx.damageablesFor('enemy')) {
       if (!target.alive || struck.has(target)) continue;
@@ -495,7 +503,11 @@ export function createHeron(
       if (target.alive) {
         const dx = target.position.x - feather.x;
         const dz = target.position.z - feather.z;
-        if (Math.hypot(dx, dz) <= FEATHER_RADIUS + target.hurtRadius) {
+        // Feathers fly a flat line at the deck the volley left from.
+        if (
+          inStrikeHeight(deckY, target) &&
+          Math.hypot(dx, dz) <= FEATHER_RADIUS + target.hurtRadius
+        ) {
           hitDir.set(feather.dx, 0, feather.dz);
           target.takeHit({
             damage: FEATHER_DAMAGE,
@@ -521,6 +533,8 @@ export function createHeron(
     let landed = false;
     for (const target of ctx.damageablesFor('enemy')) {
       if (!target.alive) continue;
+      // The dive lands ON the deck; a frog standing above the blast is clear.
+      if (!inStrikeHeight(diveAt.y, target)) continue;
       const dx = target.position.x - diveAt.x;
       const dz = target.position.z - diveAt.z;
       const distance = Math.hypot(dx, dz);
@@ -870,6 +884,12 @@ export function createHeron(
     },
     get hurtRadius(): number {
       return BODY_RADIUS;
+    },
+    // Feet to the crown of the standing neck. On the deck the whole column is
+    // inside a sword's window; hovering lifts the feet past STRIKE_REACH_UP
+    // and only the arrival slash's tall window can follow it up.
+    get hurtHeight(): number {
+      return NECK_Y + 0.6;
     },
     takeHit,
     onTongue,

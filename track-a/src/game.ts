@@ -69,6 +69,8 @@ import { createShrine } from './world/shrine';
 import { createGrapplePost } from './world/grapple';
 import { createSign } from './world/sign';
 import { createHud } from './ui/hud';
+import type { Letter } from './ui/letter';
+import { createLetter } from './ui/letter';
 import type { Manual } from './ui/manual';
 import { createManual } from './ui/manual';
 import { createTouchControls } from './ui/touch';
@@ -77,6 +79,8 @@ export interface Game {
   readonly ctx: GameContext;
   /** The booklet, exposed so the test hook can read it without a DOM query. */
   readonly manual: Manual;
+  /** The opening letter, or null when the boot options suppressed it. */
+  readonly letter: Letter | null;
   /** The post chain, exposed so the gate can turn it off and look again. */
   readonly post: PostKit;
   /** The leaf canopy, exposed for the same reason. */
@@ -129,10 +133,21 @@ const DOORWAYS: Record<ZoneId, readonly Doorway[]> = {
   arena: [],
 };
 
+export interface GameOptions {
+  /**
+   * Show the opening letter. Defaults to true - the story is part of the
+   * build. The test harness boots with it off so a hundred existing sim-driven
+   * measurements do not each begin by reading the mail; the story gate boots
+   * with it explicitly ON and measures it like everything else.
+   */
+  letter?: boolean;
+}
+
 export function createGame(
   canvasParent: HTMLElement,
   hudParent: HTMLElement | null,
   seed: number = DEFAULT_SEED,
+  options: GameOptions = {},
 ): Game {
   // One recorded seed, forked per subsystem. Forks hash against the root seed
   // rather than its draw count, so adding a system here never reshuffles the
@@ -159,6 +174,8 @@ export function createGame(
   const hud = createHud(hudParent, rng);
   // The booklet. It is its own overlay above the HUD and it pauses the world.
   const manual = createManual(hudParent, rng);
+  // The letter tucked inside its cover: the story, read before the first step.
+  const letter = options.letter === false ? null : createLetter(hudParent, rng);
   // Mounts only on a coarse pointer; on a desktop this is inert and invisible.
   const touch = createTouchControls(hudParent, input);
   const fx = createFx(scene, rng);
@@ -418,6 +435,8 @@ export function createGame(
   let shownPages = 0;
   /** Whether the CURRENT pause is the manual's, so it only clears its own. */
   let manualOwnsPause = false;
+  /** Same contract for the letter: it clears only the pause it took. */
+  let letterOwnsPause = false;
 
   /**
    * The input buffer ages on wall time and must be pumped exactly once per
@@ -639,8 +658,38 @@ export function createGame(
     return true;
   }
 
+  /**
+   * The letter reads its own input on both clocks, exactly like the manual:
+   * it pauses the world while it is up, so the verbs that dismiss it cannot
+   * live in the simulation. ANY verb is "read, thanks" - the letter must
+   * never cost a player who wants to play a second more than one press - and
+   * the tap path (the overlay's own click handler) flows through the same
+   * edge-triggered pause sync.
+   */
+  function tickLetter(): boolean {
+    if (letter === null) return false;
+    if (letter.open) {
+      if (
+        input.consume('attack') ||
+        input.consume('roll') ||
+        input.consume('tongue') ||
+        input.consume('interact') ||
+        input.consume('manual')
+      ) {
+        letter.close();
+        clearVerbBuffers();
+      }
+    }
+    if (letter.open !== letterOwnsPause) {
+      letterOwnsPause = letter.open;
+      loop.setPaused(letter.open);
+    }
+    return letter.open;
+  }
+
   function whilePaused(_realDt: number): void {
     pumpInput();
+    if (tickLetter()) return;
     tickManual();
     // Deliberately no stepListeners: a paused frame is not a simulation step,
     // and a feel trace that recorded them would be measuring the reader.
@@ -648,6 +697,7 @@ export function createGame(
 
   function step(dt: number): void {
     pumpInput();
+    if (tickLetter()) return;
     if (tickManual()) return;
 
     player.update(dt, ctx);
@@ -759,6 +809,7 @@ export function createGame(
   return {
     ctx,
     manual,
+    letter,
     post,
     canopy,
     loop,
@@ -801,6 +852,7 @@ export function createGame(
 
       input.dispose();
       touch.dispose();
+      letter?.dispose();
       manual.dispose();
       hud.dispose();
       fx.dispose();

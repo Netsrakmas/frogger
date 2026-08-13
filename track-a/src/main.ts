@@ -23,6 +23,14 @@ const TEST_ENABLED = import.meta.env.DEV || params.get('test') === '1';
 const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
 const seed = Number.isFinite(seedParam) ? seedParam >>> 0 : DEFAULT_SEED;
 
+/**
+ * The opening letter is part of every real load. Only an explicit ?test=1
+ * boot suppresses it - the harness's hundred sim-driven measurements must not
+ * each begin by reading the mail - and ?letter=1 puts it back so the story
+ * gate can boot WITH it and measure it like everything else.
+ */
+const SHOW_LETTER = params.get('letter') === '1' || params.get('test') !== '1';
+
 const canvasParent = document.getElementById('app') ?? document.body;
 const hudParent = document.getElementById('hud');
 const veil = document.getElementById('boot');
@@ -76,7 +84,7 @@ function boot(): void {
 
   let instance: Game;
   try {
-    instance = createGame(canvasParent, hudParent, seed);
+    instance = createGame(canvasParent, hudParent, seed, { letter: SHOW_LETTER });
   } catch (err) {
     // The veil is the only surface that exists this early, and it can only
     // draw: a shipped build carries no font (rule 12) and stays silent on the

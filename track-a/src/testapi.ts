@@ -223,6 +223,7 @@ export function createTestApi(game: Game): TestApi {
       pages: ctx.progress.pages.length,
       manualOpen: game.manual.open,
       manualSpread: game.manual.spread,
+      letterOpen: game.letter !== null && game.letter.open,
       paused: ctx.loop.paused,
       post: game.post.enabled,
       keys: ctx.progress.keys,
@@ -357,6 +358,10 @@ export function createTestApi(game: Game): TestApi {
 
     setCanopy(enabled: boolean): void {
       game.canopy.mesh.visible = enabled;
+    },
+
+    setCanopyPhase(time: number | null): void {
+      game.canopy.setPhase(time);
     },
 
     setBloom(enabled: boolean): void {

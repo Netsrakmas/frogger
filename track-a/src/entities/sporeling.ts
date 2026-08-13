@@ -45,6 +45,7 @@ import {
   TRAUMA_HIT,
   TURN_RATE,
 } from '../core/constants';
+import { inStrikeHeight } from '../core/hits';
 import { makeOutline, material } from '../render/materials';
 import { createController } from '../physics/controller';
 
@@ -422,6 +423,8 @@ export function createSporeling(
   function strike(ctx: GameContext): void {
     for (const target of ctx.damageablesFor('enemy')) {
       if (!target.alive || struck.has(target)) continue;
+      // A burst on one floor never reaches a frog standing on another.
+      if (!inStrikeHeight(pos.y, target)) continue;
 
       const dx = target.position.x - pos.x;
       const dz = target.position.z - pos.z;
@@ -640,6 +643,7 @@ export function createSporeling(
 
     for (const other of ctx.enemies) {
       if (other.root === root || !other.alive || struckByThrow.has(other)) continue;
+      if (!inStrikeHeight(pos.y, other)) continue;
       const dx = other.position.x - pos.x;
       const dz = other.position.z - pos.z;
       if (Math.hypot(dx, dz) > BODY_RADIUS + other.hurtRadius) continue;

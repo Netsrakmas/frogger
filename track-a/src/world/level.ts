@@ -267,6 +267,41 @@ const GRAPPLE_SPOTS: readonly { id: string; x: number; z: number }[] = [
 /** Spawns sit a hair proud of the ground so the first ground-snap resolves down. */
 const SPAWN_CLEARANCE = 0.05;
 
+/**
+ * Everything AUTHORED stands somewhere a scattered prop must not. This list is
+ * assembled from the authored tables themselves rather than transcribed by
+ * hand, because a transcription is how the wall, the belfry door, the shrine
+ * beside it and the key ruin all silently went unprotected the first time -
+ * the scatter only knew about the play envelope, and trees grew straight
+ * through anything that was merely SCENERY. Unlike PLAY_KEEPOUT (tested
+ * against a prop's centre, because a canopy overhanging a path is charm, not
+ * a bug), these are tested against the prop's own FOOTPRINT, so not even a
+ * canopy tip may interpenetrate an authored object.
+ */
+const STRUCTURE_KEEPOUT: readonly Disc[] = [
+  // The wall is long and thin; three discs along its length cover it without
+  // sterilising half the meadow around it.
+  ...[-1, 0, 1].map((i) => ({
+    x: WALL.x + i * WALL.width * 0.33,
+    z: WALL.z,
+    radius: 1.5,
+  })),
+  { x: DOOR_SPOT.x, z: DOOR_SPOT.z, radius: 3.2 },
+  ...SHRINE_SPOTS.map((spot) => ({ x: spot.x, z: spot.z, radius: 2.2 })),
+  ...SECRETS.map((secret) => ({ x: secret.x, z: secret.z, radius: 2.6 })),
+  ...BRAMBLE_SPOTS.map((spot) => ({ x: spot.x, z: spot.z, radius: 2.4 })),
+  ...GRAPPLE_SPOTS.map((spot) => ({ x: spot.x, z: spot.z, radius: 1.6 })),
+  // Signage (the two spots spawned at the bottom of createDowns).
+  { x: DOOR_SPOT.x + 2.6, z: DOOR_SPOT.z + 2.2, radius: 1.6 },
+  { x: 2.4, z: 5.2, radius: 1.6 },
+  // The authored cover block: half its 6x3 diagonal, plus clearance.
+  ...SECRETS.filter((secret) => secret.cover === true).map((secret) => ({
+    x: secret.x + TO_CAMERA.x * COVER_OFFSET,
+    z: secret.z + TO_CAMERA.z * COVER_OFFSET,
+    radius: 4.0,
+  })),
+];
+
 /** Roles that would only add noise to the shadow map. */
 const NO_CAST: readonly PaletteRole[] = ['grassLit', 'waterShallow', 'waterDeep'];
 
@@ -370,6 +405,9 @@ function place(
 interface Spot {
   x: number;
   z: number;
+  /** Widest visual extent from the centre - a canopy tip, a slab corner. */
+  footprint: number;
+  kind: 'tree' | 'ruin';
 }
 
 // --------------------------------------------------------------------- level
@@ -529,43 +567,65 @@ export function createDowns(rng: Rng): Level {
   // ------------------------------------------------------------------ props
   const occupied: Spot[] = [];
 
-  const scatter = (stream: Rng, count: number, spacing: number): Spot[] => {
-    const out: Spot[] = [];
-    for (let tries = 0; tries < PROP_ATTEMPTS && out.length < count; tries++) {
-      const x = stream.range(-PROP_MARGIN, PROP_MARGIN);
-      const z = stream.range(-PROP_MARGIN, PROP_MARGIN);
-
-      let clear = true;
-      for (const keep of PLAY_KEEPOUT) {
-        if (Math.hypot(x - keep.x, z - keep.z) < keep.radius) {
-          clear = false;
-          break;
-        }
-      }
-      if (clear) {
-        for (const other of occupied) {
-          if (Math.hypot(x - other.x, z - other.z) < spacing) {
-            clear = false;
-            break;
-          }
-        }
-      }
-      if (!clear) continue;
-
-      const spot = { x, z };
-      occupied.push(spot);
-      out.push(spot);
+  /**
+   * True when a prop of `footprint` may stand at (x, z). PLAY_KEEPOUT is
+   * tested against the CENTRE - a canopy leaning over a path is charm - but
+   * structures and other props are tested footprint against footprint, so
+   * nothing scattered stands inside anything, authored or scattered. The one
+   * softness left is tree-against-tree, where `spacing` alone applies:
+   * interlocking canopies read as a grove, and a grove is the point of them.
+   */
+  const clearAt = (
+    x: number,
+    z: number,
+    kind: Spot['kind'],
+    footprint: number,
+    spacing: number,
+  ): boolean => {
+    for (const keep of PLAY_KEEPOUT) {
+      if (Math.hypot(x - keep.x, z - keep.z) < keep.radius) return false;
     }
-    return out;
+    for (const keep of STRUCTURE_KEEPOUT) {
+      if (Math.hypot(x - keep.x, z - keep.z) < keep.radius + footprint) {
+        return false;
+      }
+    }
+    for (const other of occupied) {
+      const need =
+        kind === 'tree' && other.kind === 'tree'
+          ? spacing
+          : Math.max(spacing, footprint + other.footprint);
+      if (Math.hypot(x - other.x, z - other.z) < need) return false;
+    }
+    return true;
   };
 
+  /**
+   * The prop's DIMENSIONS are drawn before its position is searched for, so
+   * the footprint being tested is the real one rather than a worst case - and
+   * so the number of rejected positions can never change what the prop looks
+   * like, only where it stands.
+   */
   const treeStream = rng.fork('trees');
-  for (const spot of scatter(treeStream, TREE_COUNT, TREE_SPACING)) {
-    const base = height(spot.x, spot.z);
+  let treeBudget = PROP_ATTEMPTS;
+  for (let placed = 0; placed < TREE_COUNT && treeBudget > 0; placed++) {
     const yaw = treeStream.range(0, Math.PI * 2);
     const trunk = treeStream.range(1.2, 2.0);
     const canopyRadius = treeStream.range(1.3, 1.9);
     const canopyHeight = treeStream.range(1.9, 2.7);
+
+    let spot: Spot | null = null;
+    while (spot === null && treeBudget-- > 0) {
+      const x = treeStream.range(-PROP_MARGIN, PROP_MARGIN);
+      const z = treeStream.range(-PROP_MARGIN, PROP_MARGIN);
+      if (clearAt(x, z, 'tree', canopyRadius, TREE_SPACING)) {
+        spot = { x, z, footprint: canopyRadius, kind: 'tree' };
+      }
+    }
+    if (spot === null) break;
+    occupied.push(spot);
+
+    const base = height(spot.x, spot.z);
     const shoulder = base + trunk * 0.72;
 
     // Five radial segments everywhere: enough to read as a cone, few enough
@@ -617,8 +677,8 @@ export function createDowns(rng: Rng): Level {
   }
 
   const ruinStream = rng.fork('ruins');
-  for (const spot of scatter(ruinStream, RUIN_COUNT, RUIN_SPACING)) {
-    const base = height(spot.x, spot.z);
+  let ruinBudget = PROP_ATTEMPTS;
+  for (let placed = 0; placed < RUIN_COUNT && ruinBudget > 0; placed++) {
     const yaw = ruinStream.range(-0.5, 0.5);
     const kind = ruinStream.int(0, 3);
     const role = ruinStream.pick(RUIN_ROLES);
@@ -636,6 +696,20 @@ export function createDowns(rng: Rng): Level {
       d = 0.85;
     }
 
+    // A box's widest reach is its half-diagonal, whatever its yaw.
+    const footprint = Math.hypot(w, d) * 0.5;
+    let spot: Spot | null = null;
+    while (spot === null && ruinBudget-- > 0) {
+      const x = ruinStream.range(-PROP_MARGIN, PROP_MARGIN);
+      const z = ruinStream.range(-PROP_MARGIN, PROP_MARGIN);
+      if (clearAt(x, z, 'ruin', footprint, RUIN_SPACING)) {
+        spot = { x, z, footprint, kind: 'ruin' };
+      }
+    }
+    if (spot === null) break;
+    occupied.push(spot);
+
+    const base = height(spot.x, spot.z);
     const blockHeight = h + RUIN_BURY;
     addSolid(
       place(

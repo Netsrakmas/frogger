@@ -43,6 +43,7 @@ import {
   TONGUE_YANK_DISTANCE,
   TONGUE_YANK_STAGGER,
 } from '../core/constants';
+import { inStrikeHeight } from '../core/hits';
 import { makeOutline, material } from '../render/materials';
 import { createController } from '../physics/controller';
 
@@ -235,6 +236,8 @@ export function createDrownedKnight(
   function strike(ctx: GameContext): void {
     for (const target of ctx.damageablesFor('enemy')) {
       if (!target.alive || struck.has(target)) continue;
+      // The sword swings at its own height: a frog up a ramp is out of it.
+      if (!inStrikeHeight(pos.y, target)) continue;
       const dx = target.position.x - pos.x;
       const dz = target.position.z - pos.z;
       const distance = Math.hypot(dx, dz);

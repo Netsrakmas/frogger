@@ -383,6 +383,29 @@ Track A first to M4, then Track B starts — A's code is the reference for B's f
 - [ ] **C1 — Write `COMPARISON.md`:** fps, load time, bundle/wasm size, dev
   friction notes per milestone, feel parity verdict, which track to continue.
 
+### Playtest amendments (2026-08-13, user feedback on the A8 build)
+
+1. **§8 leaf-cookie → cloud cookie.** The 150-leaf dapple cast full-strength
+   shadow shapes that read as neither leaves nor clouds and sat far too heavy.
+   Amended: a handful of distinct cloud-shaped clusters, sparse (sun is the
+   meadow's base state), casting a *partial* shadow via a dithered
+   depth-material cutout (`CANOPY_SHADOW_COVER`) so weather sits one step
+   lighter than architecture.
+2. **§5 combat gains a vertical rule.** Every melee/contact overlap is now
+   disc *and* height interval (`STRIKE_REACH_UP/DOWN`, `HURT_HEIGHT`): no
+   deck-level sword reaches the hovering Heron, no enemy bites across a
+   storey. The tongue stays the anti-air verb; the arrival slash carries its
+   own tall window (`LUNGE_SLASH.reachUp`) so phase 2's loop still lands.
+3. **§6 scatter respects the authored world.** Prop placement rejects against
+   authored structures and real footprints — trees/ruins may no longer
+   interpenetrate the wall, door, shrines, secrets, cover, posts, or each
+   other (canopy-to-canopy grove overlap stays deliberate).
+4. **§7 gains the story surface.** An opening letter inside the manual's
+   front cover — previous owner's pen hand plus a Croakic heading — names
+   whose book this was, what the Heron took, and what done means; the ending
+   card answers it in the same hand. Rule 13 holds: the world is live behind
+   the paper and any verb dismisses it in one press.
+
 ## 12. Gauntlet protocol (how future sessions consume this file)
 
 1. Read `PROJECT.md` + this file. State: track, milestone, gate.

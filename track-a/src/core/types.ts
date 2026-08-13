@@ -155,6 +155,12 @@ export interface HitInfo {
 export interface Damageable {
   readonly position: THREE.Vector3;
   readonly hurtRadius: number;
+  /**
+   * Vertical extent of the hurt volume, measured up from `position` (which is
+   * always a FOOT position). Unset means core/constants HURT_HEIGHT; only the
+   * genuinely tall (the Heron) declare their own.
+   */
+  readonly hurtHeight?: number;
   readonly alive: boolean;
   /** Returns true if the hit actually landed (false when i-framed or dead). */
   takeHit(hit: HitInfo): boolean;
@@ -451,6 +457,8 @@ export interface GameSample {
   /** The booklet: up or not, and which spread it is showing. */
   manualOpen: boolean;
   manualSpread: number;
+  /** The opening letter: still up, or read/suppressed. */
+  letterOpen: boolean;
   paused: boolean;
   /** Whether the post chain is running. A8's readability check turns it off. */
   post: boolean;
@@ -545,6 +553,13 @@ export interface TestApi {
    * flat.
    */
   setCanopy(enabled: boolean): void;
+  /**
+   * Pin the cloud drift to a fixed moment (null resumes the clock). The drift
+   * runs on present time, which a screenshot cannot schedule itself against -
+   * so the gate schedules the sky against the screenshot instead, and can
+   * hunt for a phase that puts a cloud over a known patch of ground.
+   */
+  setCanopyPhase(time: number | null): void;
   /** Bloom alone, so it can be measured without the rest of the chain moving. */
   setBloom(enabled: boolean): void;
   /**

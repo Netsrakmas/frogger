@@ -595,6 +595,94 @@ async function main() {
       keyInBundle === false,
     );
 
+    // ------------------------------------------------------- 6. the story
+    // The opening letter: the story surface the playtest demanded. It boots
+    // only when asked for (?letter=1), so every other measurement in this
+    // suite starts in gameplay - and this section boots WITH it and measures
+    // it like everything else: up at boot, world held, drawn not typeset,
+    // gone for one press.
+    const letterPage = await browser.newPage({ viewport: { width: 900, height: 540 } });
+    letterPage.on('pageerror', (e) => pageErrors.push(String(e.message)));
+    await letterPage.goto(`${ORIGIN}/?test=1&letter=1&seed=${SEED}`, { waitUntil: 'load' });
+    await letterPage.waitForFunction(
+      () => window.__croak && window.__croak.ready,
+      null,
+      { timeout: 30000 },
+    );
+    const story = await letterPage.evaluate(async () => {
+      const c = window.__croak;
+      const atBoot = c.sample();
+      // Hold the stick with the letter up: nothing may move.
+      c.setMove(0.9, 0.9);
+      const before = c.sample();
+      await c.frames(40);
+      const during = c.sample();
+      c.setMove(0, 0);
+      const held =
+        during.simTime === before.simTime &&
+        during.playerPos[0] === before.playerPos[0] &&
+        during.playerPos[2] === before.playerPos[2];
+
+      const overlay = document.querySelector('.croak-letter');
+      const paths = overlay ? overlay.querySelectorAll('path').length : 0;
+      const typesetNodes = overlay
+        ? overlay.querySelectorAll('text, tspan, foreignObject').length
+        : 0;
+      const textContent = overlay ? (overlay.textContent ?? '').trim().length : 0;
+
+      // One press of anything is "read".
+      c.press('attack');
+      await c.frames(12);
+      c.release('attack');
+      const afterPress = c.sample();
+      await c.frames(20);
+      const later = c.sample();
+
+      return {
+        atBoot: { letterOpen: atBoot.letterOpen, paused: atBoot.paused },
+        held,
+        paths,
+        typesetNodes,
+        textContent,
+        dismissed: !afterPress.letterOpen && !afterPress.paused,
+        resumed: later.simTime > afterPress.simTime,
+      };
+    });
+    await letterPage.close();
+
+    check(
+      's1',
+      'THE STORY OPENS THE GAME: the letter is up at boot and the world holds',
+      `letterOpen=${story.atBoot.letterOpen} paused=${story.atBoot.paused} held=${story.held}`,
+      'open, paused, nothing moves',
+      story.atBoot.letterOpen && story.atBoot.paused && story.held,
+    );
+    check(
+      's2',
+      'and it is DRAWN - pen strokes and cipher, not one typeset letterform',
+      `${story.paths} paths, ${story.typesetNodes} text nodes, ${story.textContent} chars of DOM text`,
+      'hundreds of paths, 0 and 0',
+      story.paths > 150 && story.typesetNodes === 0 && story.textContent === 0,
+    );
+    check(
+      's3',
+      'one press of any verb dismisses it and the world breathes again',
+      `dismissed=${story.dismissed} resumed=${story.resumed}`,
+      'dismissed and running',
+      story.dismissed && story.resumed,
+    );
+    const plainBoot = await page.evaluate(() => ({
+      letterOpen: window.__croak.sample().letterOpen,
+      overlays: document.querySelectorAll('.croak-letter').length,
+    }));
+    check(
+      's4',
+      'a ?test=1 boot without ?letter=1 starts straight in gameplay',
+      `letterOpen=${plainBoot.letterOpen} overlays=${plainBoot.overlays}`,
+      'no letter mounted',
+      plainBoot.letterOpen === false && plainBoot.overlays === 0,
+    );
+
     check(
       '9a',
       'no uncaught page errors across the whole gate',

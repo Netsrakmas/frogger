@@ -47,6 +47,7 @@ import {
   TRAUMA_HIT,
   TURN_RATE,
 } from '../core/constants';
+import { inStrikeHeight } from '../core/hits';
 import { makeOutline, material } from '../render/materials';
 
 const TAU = Math.PI * 2;
@@ -236,7 +237,11 @@ export function createSpitterFly(
     const target = ctx.player;
     const dx = target.position.x - globPos.x;
     const dz = target.position.z - globPos.z;
-    if (Math.hypot(dx, dz) <= GLOB_RADIUS + target.hurtRadius) {
+    // The glob flies at spit height; a frog above or below that line is safe.
+    if (
+      inStrikeHeight(globPos.y, target) &&
+      Math.hypot(dx, dz) <= GLOB_RADIUS + target.hurtRadius
+    ) {
       hitDir.set(globDir.x, 0, globDir.z);
       target.takeHit({
         damage: SPITTER_FLY.damage,
@@ -288,6 +293,7 @@ export function createSpitterFly(
 
     for (const other of ctx.enemies) {
       if (other.root === root || !other.alive || struckByThrow.has(other)) continue;
+      if (!inStrikeHeight(pos.y, other)) continue;
       const dx = other.position.x - pos.x;
       const dz = other.position.z - pos.z;
       if (Math.hypot(dx, dz) > BODY_RADIUS + other.hurtRadius) continue;

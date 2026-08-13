@@ -48,6 +48,7 @@ import {
   TONGUE_YANK_DISTANCE,
   TONGUE_YANK_STAGGER,
 } from '../core/constants';
+import { inStrikeHeight } from '../core/hits';
 import { makeOutline, material } from '../render/materials';
 import { createController } from '../physics/controller';
 
@@ -380,6 +381,8 @@ export function createBeetleGuard(
   function strike(ctx: GameContext): void {
     for (const target of ctx.damageablesFor('enemy')) {
       if (!target.alive || struck.has(target)) continue;
+      // The shove works at shield height, not across a ledge.
+      if (!inStrikeHeight(pos.y, target)) continue;
 
       const dx = target.position.x - pos.x;
       const dz = target.position.z - pos.z;

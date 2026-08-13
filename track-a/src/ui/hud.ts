@@ -18,6 +18,7 @@ import type { Hud, Rng, ToastIcon } from '../core/types';
 import type { WeaponId } from '../core/constants';
 import { DEFAULT_SEED, PLAYER_HP_MAX } from '../core/constants';
 import { createRng } from '../core/rng';
+import { penParagraph } from './penscript';
 
 // ------------------------------------------------------------- style tuning
 // Presentation numbers for the paper layer, kept beside the shapes they
@@ -44,7 +45,7 @@ const BOSS_WELL_X = 40;
 
 /** The ending card: the demo's tally, drawn rather than written. */
 const END_W = 220;
-const END_H = 76;
+const END_H = 106;
 const END_SLOT_W = 26;
 
 const PIP_ROW_W = 240;
@@ -251,6 +252,8 @@ transition:opacity 700ms ease-out,transform 700ms ease-out;}
 .croak-ending.is-on{opacity:1;transform:translate(-50%,0);}
 .croak-ending svg{display:block;width:100%;height:auto;overflow:visible;}
 .croak-ending__slot{fill:var(--stone-shade,#b08d6e);opacity:.35;}
+.croak-hud__pen{stroke:var(--water-deep,#2b8fb5);stroke-linecap:round;
+stroke-linejoin:round;vector-effect:non-scaling-stroke;fill:none;}
 `;
 
 let styleElement: HTMLStyleElement | null = null;
@@ -756,6 +759,16 @@ export function createHud(parent?: HTMLElement | null, rng?: Rng): Hud {
             : `<path class="croak-ending__slot" d="M3.4,1.6h8.2l3,3v11.8H3.4Z"/>`) +
           `</g>`;
       }
+      // The letter's author gets the last word - the story closing the loop
+      // the opening note began, in the same hand and the same drawn pen.
+      markup += penParagraph(
+        'the sky is quiet again. ring the bell on your way home. - m',
+        16,
+        78,
+        END_W - 32,
+        ink.fork('ending'),
+        { size: 8.5, className: 'croak-hud__pen' },
+      ).markup;
       endingSvg.innerHTML = markup;
       endingEl.classList.add('is-on');
     },

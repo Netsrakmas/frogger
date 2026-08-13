@@ -155,6 +155,36 @@ function changedFraction(a, b, rect, tolerance) {
   return total === 0 ? 0 : changed / total;
 }
 
+/**
+ * Over the pixels that changed between two frames, the mean luma of frame A
+ * as a fraction of frame B's. This is the number "the cloud shadow is HALF a
+ * shadow" lives in: ~1.0 means nothing was cast, ~0.25 is the toon ramp's
+ * dark band (a building's shadow), and the cloud cookie is tuned to sit well
+ * between the two.
+ */
+function shadedRatio(a, b, rect, tolerance) {
+  const A = decodePng(a);
+  const B = decodePng(b);
+  const left = Math.max(0, Math.floor(rect[0] * A.width));
+  const right = Math.min(A.width, Math.ceil(rect[2] * A.width));
+  const top = Math.max(0, Math.floor(rect[1] * A.height));
+  const bottom = Math.min(A.height, Math.ceil(rect[3] * A.height));
+  let sumA = 0;
+  let sumB = 0;
+  for (let y = top; y < bottom; y++) {
+    for (let x = left; x < right; x++) {
+      const ia = (y * A.width + x) * A.channels;
+      const ib = (y * B.width + x) * B.channels;
+      const la = 0.2126 * A.data[ia] + 0.7152 * A.data[ia + 1] + 0.0722 * A.data[ia + 2];
+      const lb = 0.2126 * B.data[ib] + 0.7152 * B.data[ib + 1] + 0.0722 * B.data[ib + 2];
+      if (Math.abs(la - lb) <= tolerance) continue;
+      sumA += la;
+      sumB += lb;
+    }
+  }
+  return sumB === 0 ? 1 : sumA / sumB;
+}
+
 /** The extremes section 2 rule 5 forbids: pure white and pure black. */
 function extremes(buffer) {
   const { width, height, channels, data } = decodePng(buffer);
@@ -528,54 +558,76 @@ async function main() {
         belfryExtremes.black < 0.005,
     );
 
-    // ---------------------------------------------------- 6. the leaf cookie
+    // --------------------------------------------------- 6. the cloud cookie
     // The canopy is never drawn, so it cannot be seen - only its shadow can.
-    // The honest test is to take it away and watch the ground go flat: dapple
-    // is CONTRAST on a surface that would otherwise be one flat colour.
+    // The honest test is to take it away and watch the ground change. Clouds
+    // are sparse by design (sun is the meadow's base state), so the gate
+    // cannot photograph a random moment and demand shade: it FREEZES the sim,
+    // pins the drift to a series of phases through the field's period, and
+    // measures the one that parks a cloud over the view. Each phase is an
+    // identical frozen frame photographed twice - canopy on, canopy off - so
+    // the pair differs by the cast shadow alone.
     const flat = await openPage(painter);
     await flat.evaluate(async () => {
       const c = window.__croak;
       c.teleportPlayer(0, 2.4, 2.0);
-      await c.frames(40);
+      await c.frames(30);
+      c.setFrozen(true);
+      await c.frames(4);
     });
-    await flat.waitForTimeout(900);
-    const withCanopy = await flat.screenshot({ path: path.join(shots, 'a8-dapple-on.png') });
 
+    // Most of the frame, sky and HUD corner excluded: a cloud may park anywhere.
+    const GROUND = [0.05, 0.4, 0.95, 0.98];
+    let bestCloud = null;
+    for (let phase = 0; phase < 128; phase += 16) {
+      await flat.evaluate(async (p) => {
+        const c = window.__croak;
+        c.setCanopy(true);
+        c.setCanopyPhase(p);
+        await c.frames(4);
+      }, phase);
+      const on = await flat.screenshot();
+      await flat.evaluate(async () => {
+        window.__croak.setCanopy(false);
+        await window.__croak.frames(4);
+      });
+      const off = await flat.screenshot();
+      const moved = changedFraction(on, off, GROUND, 8);
+      if (bestCloud === null || moved > bestCloud.moved) {
+        bestCloud = { phase, moved, on, off };
+      }
+    }
+    fs.writeFileSync(path.join(shots, 'a8-dapple-on.png'), bestCloud.on);
+    fs.writeFileSync(path.join(shots, 'a8-dapple-off.png'), bestCloud.off);
     await flat.evaluate(async () => {
-      window.__croak.setCanopy(false);
-      await window.__croak.frames(20);
-    });
-    await flat.waitForTimeout(700);
-    const withoutCanopy = await flat.screenshot({ path: path.join(shots, 'a8-dapple-off.png') });
-    await flat.evaluate(async () => {
-      window.__croak.setCanopy(true);
-      await window.__croak.frames(10);
+      const c = window.__croak;
+      c.setCanopy(true);
+      c.setCanopyPhase(null);
+      c.setFrozen(false);
+      await c.frames(4);
     });
 
-    // A patch of open meadow floor, below and left of the frog.
-    const GROUND = [0.22, 0.58, 0.74, 0.94];
-    const dappled = lumaStats(withCanopy, ...GROUND);
-    const bare = lumaStats(withoutCanopy, ...GROUND);
-    const moved = changedFraction(withCanopy, withoutCanopy, GROUND, 8);
-
+    const ratio = shadedRatio(bestCloud.on, bestCloud.off, GROUND, 8);
     check(
       'd1',
-      'THE LEAF COOKIE IS A REAL SHADOW: taking it away changes the ground',
-      `${fmt(moved * 100, 1)}% of the open ground changes by more than 8 luma`,
-      '> 20% of the patch',
-      moved > 0.2,
+      'THE CLOUD COOKIE IS A REAL SHADOW: somewhere in its drift, ground changes',
+      `best phase ${bestCloud.phase}s: ${fmt(bestCloud.moved * 100, 1)}% of the frame's ground shades`,
+      '> 3% at the best phase',
+      bestCloud.moved > 0.03,
     );
     check(
       'd2',
-      'and taking it away brightens the ground rather than changing its colour',
-      `luma ${fmt(dappled.mean, 1)} -> ${fmt(bare.mean, 1)}, ` +
-        `contrast ${fmt(dappled.stdev, 1)} -> ${fmt(bare.stdev, 1)}`,
-      'brighter without the leaves',
-      bare.mean > dappled.mean,
+      'and it is HALF a shadow - weather sits lighter than architecture',
+      `shaded ground keeps ${fmt(ratio * 100, 1)}% of its light`,
+      'between 45% and 92%',
+      ratio > 0.45 && ratio < 0.92,
     );
     notes.push(
       'd1/d2: the canopy writes no colour and no depth, so nothing in either frame ' +
-        'IS the canopy - what changes is the shadow it casts from the one key light.',
+        'IS the canopy - what changes is the shadow it casts from the one key light. ' +
+        'd2 is the playtest fix: the old leaf dapple dropped shaded ground to the toon ' +
+        "ramp's dark band, the same weight as a wall's shadow, and read as neither " +
+        'leaves nor clouds. The dithered depth material keeps cloud shade partial.',
     );
 
     // --------------------------------------------------- 7. the contact sheet
