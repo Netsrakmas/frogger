@@ -416,6 +416,8 @@ export function createGame(
   let coinSerial = 0;
   /** Pages the booklet has been told about, so a new one triggers the reveal. */
   let shownPages = 0;
+  /** Whether the CURRENT pause is the manual's, so it only clears its own. */
+  let manualOwnsPause = false;
 
   /**
    * The input buffer ages on wall time and must be pumped exactly once per
@@ -598,21 +600,36 @@ export function createGame(
     }
   }
 
+  /** Presses queued while reaching for (or reading) the book are not swings. */
+  function clearVerbBuffers(): void {
+    input.clear('attack');
+    input.clear('tongue');
+    input.clear('roll');
+    input.clear('interact');
+  }
+
   /**
    * The booklet's own input, read on BOTH clocks: from inside a step while the
    * game is running, and from the loop's paused callback while it is not. The
    * pause switches the simulation off, so the one verb that can undo it cannot
    * live in the simulation.
+   *
+   * THE PAUSE FOLLOWS THE BOOK'S TRANSITIONS, not only the toggle press. The
+   * book has two other ways to change state - the page-pickup reveal opens it,
+   * and a tap on the overlay closes it - and a pause that only tracked the
+   * keyboard toggle left both of those drifting: the reveal froze the world
+   * while simTime kept counting, and a tap-close left the loop paused with the
+   * book gone. The sync is EDGE-triggered rather than written every frame, so
+   * a pause the manual does not own (the test hook's freeze) is left alone.
    */
   function tickManual(): boolean {
     if (input.consume('manual')) {
       manual.toggle();
+      clearVerbBuffers();
+    }
+    if (manual.open !== manualOwnsPause) {
+      manualOwnsPause = manual.open;
       loop.setPaused(manual.open);
-      // Whatever was queued while reaching for the book is not a swing.
-      input.clear('attack');
-      input.clear('tongue');
-      input.clear('roll');
-      input.clear('interact');
     }
     if (!manual.open) return false;
     // Section 7's spread is a thing you READ, and a boss that kept swinging
@@ -668,6 +685,12 @@ export function createGame(
       shownPages = progress.pages.length;
       manual.setFound(progress.pages);
       manual.reveal(progress.pages[progress.pages.length - 1]);
+      // The reveal is an OPEN, and an open pauses - same contract as the
+      // toggle. Setting it here rather than waiting for the next tickManual
+      // means not a single extra sim step leaks past the reveal frame.
+      manualOwnsPause = true;
+      loop.setPaused(true);
+      clearVerbBuffers();
     }
 
     // Told every step rather than on a change: the bar has to survive a zone

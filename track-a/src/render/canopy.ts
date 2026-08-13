@@ -64,8 +64,29 @@ export function createCanopy(scene: THREE.Scene, rng: Rng): Canopy {
     leaves.push(leaf);
   }
 
-  const geometry = mergeGeometries(leaves.map((leaf) => leaf.toNonIndexed()));
-  for (const leaf of leaves) leaf.dispose();
+  // THE FIELD IS MADE PERIODIC, and this is what makes the drift seamless. The
+  // update below keeps the mesh near the player by wrapping its position on
+  // CANOPY_SPAN, and a wrap is only invisible if translating the leaf field by
+  // exactly CANOPY_SPAN maps it onto itself. A single random scatter is not
+  // periodic in anything, so the first version of this canopy POPPED: every
+  // 91 s of drift (and every 32 u the player walked) the whole dapple snapped
+  // to an uncorrelated layout. Tiling the scatter 3x3 makes the span a true
+  // period, and the 30 u shadow frustum always sits inside the tiled interior
+  // where a one-period translation changes nothing.
+  const tiled: THREE.BufferGeometry[] = [];
+  for (const leaf of leaves) {
+    for (let tx = -1; tx <= 1; tx++) {
+      for (let tz = -1; tz <= 1; tz++) {
+        const copy = leaf.clone();
+        copy.translate(tx * CANOPY_SPAN, 0, tz * CANOPY_SPAN);
+        tiled.push(copy);
+      }
+    }
+    leaf.dispose();
+  }
+
+  const geometry = mergeGeometries(tiled.map((leaf) => leaf.toNonIndexed()));
+  for (const leaf of tiled) leaf.dispose();
 
   const material = new THREE.MeshBasicMaterial();
   material.colorWrite = false;
@@ -96,9 +117,14 @@ export function createCanopy(scene: THREE.Scene, rng: Rng): Canopy {
       // Two drifts at different rates on the two axes, so the pattern never
       // repeats on a visible beat. The canopy also follows the player, because
       // it only has to cover the shadow frustum and not the whole world.
-      const wrap = CANOPY_SPAN * 0.5;
-      const driftX = (presentTime * CANOPY_DRIFT) % wrap;
-      const driftZ = (presentTime * CANOPY_DRIFT * 0.62) % wrap;
+      // Everything wraps on CANOPY_SPAN - the field's true period - and the
+      // drift is centred so the mesh origin stays within half a span of the
+      // player: with the 3x3 tiling that keeps the frustum at least half a
+      // span from the tiled edge, so every wrap and every anchor step moves
+      // the mesh by exactly one period and the shadows land where they were.
+      const wrap = CANOPY_SPAN;
+      const driftX = ((presentTime * CANOPY_DRIFT) % wrap) - wrap * 0.5;
+      const driftZ = ((presentTime * CANOPY_DRIFT * 0.62) % wrap) - wrap * 0.5;
       mesh.position.set(
         Math.round(focus.x / wrap) * wrap + driftX,
         CANOPY_HEIGHT,

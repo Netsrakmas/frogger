@@ -17,6 +17,7 @@ const ACTION_LIST: readonly Action[] = [
   'lockon',
   'interact',
   'block',
+  'manual',
 ];
 
 /** Keyed by `event.code` (physical key), so AZERTY/Dvorak players get WASD too. */

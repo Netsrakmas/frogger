@@ -532,8 +532,9 @@ export interface TestApi {
   pickupList(): PickupSnapshot[];
   /**
    * World signage, found by walking the scene graph. `strokes` counts the
-   * triangles of the carved writing, so a sign that says nothing is visible as
-   * a sign that says nothing.
+   * triangles of the carved-writing mesh ONLY (the one sign.ts names
+   * `signWriting`), so a sign that says nothing reports 0 - the slab and its
+   * outline never count.
    */
   signs(): { id: string; pos: [number, number, number]; strokes: number }[];
   /** Turn the whole post chain on or off, live. */
@@ -546,6 +547,14 @@ export interface TestApi {
   setCanopy(enabled: boolean): void;
   /** Bloom alone, so it can be measured without the rest of the chain moving. */
   setBloom(enabled: boolean): void;
+  /**
+   * Stop the simulation dead while rendering continues - the manual's pause
+   * without the manual. Two screenshots taken inside a freeze differ only by
+   * whatever render-side switch was flipped between them, which is the only
+   * honest way to photograph an effect on a world that otherwise never stops
+   * moving.
+   */
+  setFrozen(enabled: boolean): void;
 }
 
 declare global {

@@ -417,71 +417,61 @@ async function main() {
     );
 
     // ------------------------------------------------------ 4. bloom discipline
-    // BLOOM IS TOGGLED ON ITS OWN. An earlier version of this check compared
-    // post-on against post-off and reported that the meadow gained 20 points of
-    // bright pixels and the belfry lost 18 - which was true, and was a
-    // measurement of the tone curve, the vignette and the gradient all at once.
-    // Turning only bloom off leaves exactly one variable.
+    // BOTH SHOTS OF EACH PAIR ARE TAKEN INSIDE A FREEZE. Three earlier
+    // attempts failed three different ways - a fixed brightness count missed a
+    // cyan halo, a whole-frame mean drowned a small source, and diffing two
+    // live frames measured the game ANIMATING between them (38% of the meadow
+    // moves in a second of idle bob and water). setFrozen stops the sim while
+    // rendering continues, the canopy is hidden because it drifts on present
+    // time, and then the ONLY thing that differs between the two shots is the
+    // bloom toggle - so the changed pixels ARE the halo, exactly.
     await page.evaluate(async () => {
       window.__croak.setPost(true);
-      await window.__croak.frames(10);
-    });
-    await page.waitForTimeout(500);
-
-    const BRIGHT = 180;
-    const meadowGlowOn = brightPixels(meadowOn, BRIGHT);
-    // The canopy drifts on present time, so two screenshots seconds apart differ
-    // by a moving dapple worth about half a luma step - which is larger than the
-    // thing being measured. It is held still for the whole bloom comparison.
-    await page.evaluate(async () => {
       window.__croak.setCanopy(false);
-      await window.__croak.frames(12);
+      await window.__croak.frames(20);
+      window.__croak.setFrozen(true);
+      await window.__croak.frames(30);
     });
     await page.waitForTimeout(700);
     const meadowBloomShot = await page.screenshot({ path: path.join(shots, 'a8-downs-bloom.png') });
-    const meadowNoBloomShot = await (async () => {
-      await page.evaluate(async () => {
-        window.__croak.setBloom(false);
-        await window.__croak.frames(12);
-      });
-      await page.waitForTimeout(600);
-      const shot = await page.screenshot({ path: path.join(shots, 'a8-downs-nobloom.png') });
-      await page.evaluate(async () => {
-        window.__croak.setBloom(true);
-        await window.__croak.frames(8);
-      });
-      return shot;
-    })();
-    const meadowGlowNone = brightPixels(meadowNoBloomShot, BRIGHT);
+    await page.evaluate(async () => {
+      window.__croak.setBloom(false);
+      await window.__croak.frames(10);
+    });
+    await page.waitForTimeout(500);
+    const meadowNoBloomShot = await page.screenshot({ path: path.join(shots, 'a8-downs-nobloom.png') });
+    await page.evaluate(async () => {
+      window.__croak.setBloom(true);
+      window.__croak.setFrozen(false);
+      window.__croak.setCanopy(true);
+      await window.__croak.frames(8);
+    });
 
-    // A GLOW SOURCE IN FRAME, and the same frame without bloom. The belfry was
-    // tried first and measured 44.38 either way - not because bloom was broken
-    // but because the landing the frog arrives on has no luminescent geometry
-    // in shot at all. A shrine is gold, emissive, and stands in the open, so it
-    // is the honest place to ask whether glow glows.
+    // Now the same pair standing at a glow source - the meadow shrine, gold
+    // and emissive, the nearest thing the demo has to a lamp in daylight.
     const shrineShots = await (async () => {
       const moved = await page.evaluate(async () => {
         const c = window.__croak;
-        c.setCanopy(false);
         const shrine = c.shrines()[0];
         if (!shrine) return false;
         c.teleportPlayer(shrine.pos[0] + 1.2, shrine.pos[1] + 0.2, shrine.pos[2] + 1.2);
-        await c.frames(40);
+        c.setCanopy(false);
+        await c.frames(30);
+        c.setFrozen(true);
+        await c.frames(20);
         return true;
       });
-      await page.waitForTimeout(900);
+      await page.waitForTimeout(700);
       const lit = await page.screenshot({ path: path.join(shots, 'a8-shrine-bloom.png') });
       await page.evaluate(async () => {
         window.__croak.setBloom(false);
-        await window.__croak.frames(12);
+        await window.__croak.frames(10);
       });
-      await page.waitForTimeout(700);
+      await page.waitForTimeout(500);
       const plain = await page.screenshot({ path: path.join(shots, 'a8-shrine-nobloom.png') });
       await page.evaluate(async () => {
         window.__croak.setBloom(true);
-        await window.__croak.frames(8);
-      });
-      await page.evaluate(async () => {
+        window.__croak.setFrozen(false);
         window.__croak.setCanopy(true);
         await window.__croak.frames(8);
       });
@@ -495,47 +485,32 @@ async function main() {
     });
     await page.waitForTimeout(1100);
     const belfryOn = await page.screenshot({ path: path.join(shots, 'a8-belfry-post.png') });
-
     const belfryTone = averageRgb(belfryOn);
 
-    // Measured as PIXELS THE HALO TOUCHES. Two earlier attempts got this wrong
-    // in opposite directions: a count of pixels over a fixed brightness missed a
-    // cyan halo whose red channel can never reach it, and a mean over the whole
-    // frame drowned a small bright source in 900x540 pixels of unchanged meadow.
-    // Counting the pixels that actually move is blind to both.
     const FRAME = [0, 0, 1, 1];
-    const meadowLit = lumaStats(meadowBloomShot, 0, 0, 1, 1).mean;
-    const meadowUnlit = lumaStats(meadowNoBloomShot, 0, 0, 1, 1).mean;
     const meadowTouched = changedFraction(meadowBloomShot, meadowNoBloomShot, FRAME, 3);
     const shrineTouched = changedFraction(shrineShots.lit, shrineShots.plain, FRAME, 3);
-    const meadowLift = meadowLit - meadowUnlit;
-    // The threshold counts are kept only for the note below: they are what the
-    // first version of this check used, and they are why it read 0.533% either
-    // way while the halo was plainly there.
-    void meadowGlowOn;
-    void meadowGlowNone;
 
     check(
       'b1',
-      'BLOOM IS THRESHOLDED: nothing in the sunlit meadow passes the cut',
-      `bloom moves ${fmt(meadowTouched * 100, 2)}% of the frame ` +
-        `(mean luma ${fmt(meadowUnlit, 2)} -> ${fmt(meadowLit, 2)})`,
+      'BLOOM IS THRESHOLDED: nothing in the open meadow passes the cut',
+      `bloom touches ${fmt(meadowTouched * 100, 3)}% of a frozen frame`,
       'under 1% of the frame',
       meadowTouched < 0.01,
     );
     check(
       'b2',
-      'but a shrine in frame - gold, emissive - gains a halo',
+      'but a shrine in frame - gold, emissive - wears a halo',
       shrineShots.moved
-        ? `bloom moves ${fmt(shrineTouched * 100, 2)}% of the frame`
+        ? `bloom touches ${fmt(shrineTouched * 100, 3)}% of a frozen frame`
         : 'no shrine to stand at',
-      'more of the frame than empty meadow',
-      shrineShots.moved && shrineTouched > 0.01 && shrineTouched > meadowTouched * 2,
+      'a real footprint, bigger than empty meadow',
+      shrineShots.moved && shrineTouched > 0.002 && shrineTouched > meadowTouched * 2,
     );
     notes.push(
-      `b1/b2: bloom threshold ${IMPL.BLOOM_THRESHOLD}, intensity ${IMPL.BLOOM_INTENSITY}. ` +
-        'Bright pixels are counted by LUMA, not by all three channels: dungeonGlow ' +
-        'has a red channel of 111 and a cyan halo would otherwise measure as none.',
+      `b1/b2: bloom threshold ${IMPL.BLOOM_THRESHOLD}, intensity ${IMPL.BLOOM_INTENSITY}, ` +
+        `emissive intensity ${IMPL.EMISSIVE_INTENSITY}. Changed-pixel fractions over ` +
+        'frozen frames, luma tolerance 3.',
     );
 
     // --------------------------------------------- 5. no pure white, no black

@@ -165,12 +165,17 @@ export function createTestApi(game: Game): TestApi {
     const out: { id: string; pos: [number, number, number]; strokes: number }[] = [];
     ctx.scene.traverse((object) => {
       if (!object.name.startsWith('sign:')) return;
+      // Only the mesh sign.ts names as the carving counts. An earlier version
+      // excluded children[0] and counted the rest, which swept the outline
+      // hull in - so a sign with EMPTY text still reported strokes, and the
+      // one property this probe exists for was never actually measured.
       let strokes = 0;
       object.traverse((child) => {
         const mesh = child as THREE.Mesh;
-        if (mesh.isMesh !== true || mesh.geometry === undefined) return;
+        if (mesh.isMesh !== true || child.name !== 'signWriting') return;
         const position = mesh.geometry.getAttribute('position');
-        if (position !== undefined && mesh !== object.children[0]) strokes += position.count;
+        // Non-indexed box soup: three vertices per triangle.
+        if (position !== undefined) strokes += position.count / 3;
       });
       const world = object.getWorldPosition(new THREE.Vector3());
       out.push({
@@ -356,6 +361,10 @@ export function createTestApi(game: Game): TestApi {
 
     setBloom(enabled: boolean): void {
       game.post.setBloom(enabled);
+    },
+
+    setFrozen(enabled: boolean): void {
+      ctx.loop.setPaused(enabled);
     },
   };
 }

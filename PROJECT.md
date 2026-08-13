@@ -1,6 +1,6 @@
 # Frogger — a Tunic-like with a frog
 
-**Phase:** 2 — build (Track A, milestones A1-A7 done; A8 render pass IN PROGRESS at 13/15)
+**Phase:** 2 — build (Track A, milestones A1-A8 done; next is A9 juice + audio)
 **Stack:** dual-track: (A) Vite + Three.js + TS (primary), (B) Godot 4 web export (comparison)
 **Repo:** github.com/netsrakmas/frogger
 **Live:** https://netsrakmas.github.io/frogger/ — deployed 2026-08-12 (GitHub reports success; see the ship note on verification)
@@ -12,7 +12,7 @@ A triple-A-polish demo of a Tunic-like isometric action-adventure starring a fro
 ## Phase log
 - 0 idee — skipped by explicit user decision (verdict: build). User committed to building via gauntlet prompting.
 - 1 plan — done. RESEARCH.md (3 angles: spec craft, Tunic visual grammar, architecture + feel numbers) and PROMPT.md (dual-track master spec, milestones A1–A10, B1–B5, C1) written. Spec-only per user request; build not started.
-- 2 build — in progress. **A1–A7 done**, A8 partially done (see milestone log).
+- 2 build — in progress. **A1–A8 done** (see milestone log). Next: A9 juice + audio.
 - 3 art — not started
 - 4 test — not started
 - 5 ship — deployed via Actions. Publish confirmed by GitHub; end-to-end live check still owed (this container cannot reach github.io).
@@ -253,10 +253,14 @@ a3 16/16, a4 15/15, a5 19/19, a6 20/20, controls 14/14.
   were there; it names the seven verbs now, so a button going MISSING still
   fails it. Neither was a defect in the game, and neither was papered over.
 
-**A8 — Render pass — NOT DONE. Gate `tests/a8.mjs` stands at 13/15.**
-The code is in and four genuine render defects were found and fixed by it; two
-checks in the gate remain unresolved and A8's box in PROMPT.md is deliberately
-still unticked.
+**A8 — Render pass — DONE 2026-08-13.** Gate: `tests/a8.mjs` **15/15**.
+Landed in two rounds: the chain itself (13/15, four render defects found and
+fixed), then the last two checks resolved in the review round below — the
+bloom measurement needed a sim freeze that renders without drawing an overlay,
+and the manual-pause work produced exactly that hook (`setFrozen`). With both
+screenshots taken inside a freeze, the only thing that differs is the bloom
+toggle, so the changed pixels ARE the halo: 0.102% of the open meadow moves
+(thresholded — nothing there glows) against 0.588% at a gold shrine.
 
 - **What landed:** the pmndrs post chain as ONE merged EffectPass (bloom, ACES,
   vignette, additive sky gradient, SMAA); an animated leaf cookie that is a real
@@ -282,20 +286,16 @@ still unticked.
      dungeonGlow's linear luminance is 0.638 and gold's is 0.571, so nothing in
      the game had ever crossed the cut. Now 2.0, and the constant sits beside
      BLOOM_THRESHOLD because the two only mean anything together.
-- **What is unresolved (b1/b2, bloom discipline).** Measuring a small halo is
-  harder than it looks and three attempts each failed differently, which is
-  worth recording:
-  * counting pixels over a fixed brightness missed a CYAN halo entirely -
-    dungeonGlow's red channel is 111 and can never reach 250;
-  * mean luma over the whole frame drowned a small bright source in 900x540
-    pixels of unchanged meadow (44.38 with bloom, 44.38 without - the same
-    number twice);
-  * counting changed pixels between two shots measures the game ANIMATING
-    between them: 38% of the frame moves in a second and a bit of idle bob,
-    pickup spin and drifting dapple.
-  The measurement wants the world frozen for both shots. A7's pause can do that,
-  but its overlay covers the screen, so this needs a freeze hook that stops the
-  sim without drawing anything - about an hour of work, not attempted here.
+- **The bloom measurement (b1/b2), resolved in the review round.** Three
+  attempts failed three different ways, worth recording: pixels over a fixed
+  brightness missed a CYAN halo (dungeonGlow's red channel is 111 and can never
+  reach 250); mean luma over the whole frame drowned a small source in 900x540
+  pixels of unchanged meadow (44.38 either way — the same number twice); and
+  diffing two live frames measured the game ANIMATING between them (38% of the
+  meadow moves in a second of idle bob and water). The fix is `setFrozen` in
+  the test API — the manual's pause without the manual — plus hiding the
+  present-time-drifting canopy for the pair, so the two shots differ by the
+  bloom toggle alone.
 - Also worth knowing: three's ACES and postprocessing's ACES are different fits,
   not the same curve at different exposures. Matching them with a single scale
   was tried (1/0.6, three's own constant) and lands the meadow at luma 202
@@ -303,6 +303,54 @@ still unticked.
   curve is the shipping look; the fallback's job is to stay readable, and the
   gate asserts exactly that and nothing stronger.
 - A9 (juice + audio) and A10 (release candidate) are not started.
+
+**Review round — 2026-08-13.** A full-diff review of the A6–A8 commits found
+seven defects; all seven are fixed in this round.
+1. **Touch soft-lock in the manual (worst).** The booklet overlay sits above
+   the touch controls (z 20 over z 5) with pointer-events on, and had no tap
+   handling of its own — a phone player who picked up their first page was
+   permanently stuck on the booklet screen, because the only buttons that
+   could close it were underneath it. The overlay handles its own taps now:
+   outer thirds of the spread turn the page, anywhere else closes. Verified by
+   a new a7 check (p2c) that dispatches a real click and asserts the book
+   closes, the pause lifts and the sim resumes.
+2. **The reveal didn't pause.** `loop.setPaused` was only called on the
+   keyboard-toggle path, so picking up a page opened the book while simTime
+   kept counting behind it — the exact invariant the A7 gate claims, asserted
+   only for the toggle. The pause is now synced to the book's state on every
+   tick, and the reveal site pauses immediately. New a7 check (p2b) holds the
+   stick through a reveal and measures both clocks.
+3. **Unsatisfiable peer dependency.** postprocessing@6.37.8 caps three at
+   <0.181 while the project pins 0.185.1; installs only worked with
+   --legacy-peer-deps. Upgraded to 6.39.4 (three <0.186) — a fresh
+   `npm install` resolve now succeeds with no flags, verified by a clean
+   package-lock-only resolve in a scratch dir.
+4. **The canopy dapple popped.** The drift wrapped on half the leaf field's
+   span, and a random scatter is not periodic in anything — every 91 s of
+   drift (and every 16 u walked) the whole dapple snapped to an uncorrelated
+   layout. The scatter is now tiled 3x3 so CANOPY_SPAN is a true period, the
+   drift is centred, and every wrap moves the mesh by exactly one period. The
+   invariance was checked case by case (drift wrap, anchor step both ways):
+   the 30 u shadow frustum always lands in the region the translation maps
+   onto itself.
+5. **'manual' was missing from ACTION_LIST**, so its buffer skipped the
+   blur-time releaseAll and the aging loop — a Tab pressed just before losing
+   focus could pop the book open minutes later on refocus.
+6. **signs() counted the outline as writing.** The probe excluded only
+   children[0], so a sign with EMPTY text still reported strokes — the one
+   property the probe exists for was never measured. The carving mesh is named
+   now and it is the only thing counted, in triangles as documented.
+7. **a7's "meadow signage" check never left the belfry.** A comment claimed a
+   fresh load was the way back to the meadow, and then read the same page
+   again — deleting the meadow's two signs would have passed the whole suite.
+   It opens a genuinely fresh page now, and a new check (w1b) asserts the door
+   and pond signs exist with carving.
+
+Two suspicious-looking things were checked and are NOT bugs, recorded so they
+are not "fixed" later: the doorway-table rewrite did not remove a belfry→downs
+return (the belfry never had a return gate), and `spawnEnemies()` reading
+`boss`/`victory` above their declarations is fine (the declarations execute
+before the first call).
 
 ## Open questions
 - Which of the two stacks wins after comparison (decided in/after phase 2).

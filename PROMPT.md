@@ -355,7 +355,7 @@ Track A first to M4, then Track B starts — A's code is the reference for B's f
   pastiche per §7), Croakic renderer (text→glyphs), signage, pen-note hint channel.
   *Gate: all pages collectible; spread reveal; glyphs decode round-trip in a unit
   test.*
-- [ ] **A8 — Render pass.** Full §8 recipe: toon ramp, outlines, leaf cookie,
+- [x] **A8 — Render pass.** Full §8 recipe: toon ramp, outlines, leaf cookie,
   additive gradient, fog, bloom discipline, graded shadows. *Gate: side-by-side
   screenshot vs TUNIC reference grid; post-disabled readability; 60 fps held.*
 - [ ] **A9 — Juice + audio.** Procedural/WebAudio SFX set (thwip, schlorp, croak,

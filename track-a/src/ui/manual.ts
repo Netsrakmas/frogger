@@ -310,6 +310,41 @@ export function createManual(parent: HTMLElement | null, rng: Rng): Manual {
   let turning = false;
   let turnTimer = 0;
 
+  /**
+   * The overlay handles its own taps, and it HAS to: it sits above the touch
+   * controls (z 20 over z 5) with pointer-events on while open, so on a phone
+   * it swallows every tap - including the taps on the buttons that would close
+   * it. Without this handler, a touch-only player who picked up their first
+   * page was permanently stuck on the booklet screen.
+   *
+   * The zones are the obvious ones: the outer third of the spread turns the
+   * page toward that side, anywhere else - the middle of the spread or the
+   * backdrop around it - closes the book. Click events fire for taps too, so
+   * one listener covers mouse and touch alike.
+   */
+  function onTap(event: MouseEvent): void {
+    if (!open) return;
+    const rect = spreadEl.getBoundingClientRect();
+    const inside =
+      event.clientX >= rect.left &&
+      event.clientX <= rect.right &&
+      event.clientY >= rect.top &&
+      event.clientY <= rect.bottom;
+    if (inside) {
+      const across = (event.clientX - rect.left) / Math.max(1, rect.width);
+      if (across < 1 / 3) {
+        turn(-1);
+        return;
+      }
+      if (across > 2 / 3) {
+        turn(1);
+        return;
+      }
+    }
+    setOpen(false);
+  }
+  root.addEventListener('click', onTap);
+
   /** One leaf, either the page or the gap where it will go. */
   function leaf(index: number, x: number): string {
     const have = found.includes(index);
@@ -397,6 +432,23 @@ export function createManual(parent: HTMLElement | null, rng: Rng): Manual {
     root.setAttribute('aria-hidden', open ? 'false' : 'true');
   }
 
+  function turn(direction: number): void {
+    const spreads = Math.ceil(PAGE_TOTAL / 2);
+    const next = Math.max(0, Math.min(spreads - 1, spread + Math.sign(direction)));
+    if (next === spread || turning) return;
+    spread = next;
+    turning = true;
+    root.classList.add('is-turning');
+    // The leaf collapses, the content swaps behind it, and it opens again.
+    // Doing the swap on a timer rather than a transitionend keeps it honest
+    // if the page is not composited (a headless run still turns the page).
+    turnTimer = window.setTimeout(() => {
+      render();
+      root.classList.remove('is-turning');
+      turning = false;
+    }, 260);
+  }
+
   return {
     root,
     get open(): boolean {
@@ -414,22 +466,7 @@ export function createManual(parent: HTMLElement | null, rng: Rng): Manual {
       setOpen(false);
     },
 
-    turn(direction: number): void {
-      const spreads = Math.ceil(PAGE_TOTAL / 2);
-      const next = Math.max(0, Math.min(spreads - 1, spread + Math.sign(direction)));
-      if (next === spread || turning) return;
-      spread = next;
-      turning = true;
-      root.classList.add('is-turning');
-      // The leaf collapses, the content swaps behind it, and it opens again.
-      // Doing the swap on a timer rather than a transitionend keeps it honest
-      // if the page is not composited (a headless run still turns the page).
-      turnTimer = window.setTimeout(() => {
-        render();
-        root.classList.remove('is-turning');
-        turning = false;
-      }, 260);
-    },
+    turn,
 
     setFound(pages: readonly number[]): void {
       const next = [...pages].sort((a, b) => a - b);
@@ -446,6 +483,7 @@ export function createManual(parent: HTMLElement | null, rng: Rng): Manual {
 
     dispose(): void {
       window.clearTimeout(turnTimer);
+      root.removeEventListener('click', onTap);
       root.remove();
       releaseStyle();
     },

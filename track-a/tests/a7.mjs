@@ -354,6 +354,15 @@ async function main() {
       const before = c.sample().pages;
       const got = await a.grab('page');
       await c.frames(6);
+      // The reveal is an OPEN, and an open pauses. Hold the stick and watch
+      // both clocks, same as m2: an earlier build opened the book here while
+      // simTime kept counting behind the page, and only the toggle path was
+      // ever tested.
+      c.setMove(0.9, 0.9);
+      const atReveal = c.sample();
+      await c.frames(30);
+      const later = c.sample();
+      c.setMove(0, 0);
       const s = c.sample();
       const root = document.querySelector('.croak-manual');
       return {
@@ -361,6 +370,12 @@ async function main() {
         got,
         pages: s.pages,
         openedItself: s.manualOpen,
+        pausedItself: s.paused,
+        simLeak: later.simTime - atReveal.simTime,
+        moved: Math.hypot(
+          later.playerPos[0] - atReveal.playerPos[0],
+          later.playerPos[2] - atReveal.playerPos[2],
+        ),
         spread: s.manualSpread,
         emptyTabs: root.querySelectorAll('.croak-manual__tab--empty').length,
         gaps: root.querySelectorAll('.croak-manual__slot').length,
@@ -380,6 +395,54 @@ async function main() {
       `open = ${first.openedItself}, spread ${first.spread}`,
       'open, on its own spread',
       first.openedItself === true,
+    );
+    check(
+      'p2b',
+      'and the reveal PAUSES, same contract as the toggle - both clocks',
+      `paused ${first.pausedItself}, sim advanced ${fmt(first.simLeak, 3)} s, ` +
+        `frog moved ${fmt(first.moved, 3)} u`,
+      'paused, sim frozen, frog still',
+      first.pausedItself === true && first.simLeak < 0.02 && first.moved < 0.01,
+    );
+
+    // ------------------------------------------- 3b. the overlay closes itself
+    // The book sits ABOVE the touch controls, so on a phone the only reachable
+    // close control is the overlay itself. Click events fire for taps too, so
+    // one synthetic click on the spread's centre is the honest stand-in for
+    // the tap a phone player would make.
+    const tapped = await page.evaluate(async () => {
+      const c = window.__croak;
+      const a = window.__a7;
+      const wasOpen = c.sample().manualOpen;
+      const spreadBox = document
+        .querySelector('.croak-manual__spread')
+        .getBoundingClientRect();
+      const overlay = document.querySelector('.croak-manual');
+      overlay.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          clientX: spreadBox.left + spreadBox.width / 2,
+          clientY: spreadBox.top + spreadBox.height / 2,
+        }),
+      );
+      const closed = (await a.waitFor((k) => !k.sample().manualOpen, 120)) >= 0;
+      const before = c.sample();
+      await c.frames(20);
+      const after = c.sample();
+      return {
+        wasOpen,
+        closed,
+        unpaused: after.paused === false,
+        resumed: after.simTime - before.simTime,
+      };
+    });
+    check(
+      'p2c',
+      'TAP TO CLOSE: a tap on the open spread closes the book and resumes',
+      `open before ${tapped.wasOpen}, closed ${tapped.closed}, ` +
+        `paused after ${!tapped.unpaused}, sim advanced ${fmt(tapped.resumed, 3)} s`,
+      'closes, unpauses, sim runs',
+      tapped.wasOpen && tapped.closed && tapped.unpaused && tapped.resumed > 0.05,
     );
     check(
       'p3',
@@ -440,19 +503,19 @@ async function main() {
     // -------------------------------------------------- 4. signage in the world
     const signage = await page.evaluate(async () => {
       const c = window.__croak;
-      const a = window.__a7;
-      const belfrySigns = c.signs();
-      // Back up to the meadow to look at the ones out there.
-      const shrine = c.shrines()[0];
       return {
-        belfry: belfrySigns.map((s) => ({ id: s.id, strokes: s.strokes })),
-        shrineFound: !!shrine,
+        belfry: c.signs().map((s) => ({ id: s.id, strokes: s.strokes })),
       };
     });
-    const downsSignage = await page.evaluate(async () => {
-      // A fresh load is the cheapest honest way back to the meadow.
-      return window.__croak.signs().map((s) => ({ id: s.id, strokes: s.strokes }));
-    });
+    // A fresh load actually IS the way back to the meadow - an earlier version
+    // of this check said so in a comment and then read the same belfry page
+    // again, so the meadow's two signs were never observed by any gate and
+    // deleting their spawns would have passed the whole suite.
+    const meadowPage = await openPage(browser);
+    const downsSignage = await meadowPage.evaluate(() =>
+      window.__croak.signs().map((s) => ({ id: s.id, strokes: s.strokes })),
+    );
+    await meadowPage.close();
 
     check(
       'w1',
@@ -463,7 +526,17 @@ async function main() {
       '>= 1 sign, with strokes',
       signage.belfry.length >= 1 && signage.belfry.every((s) => s.strokes > 0),
     );
-    notes.push(`w1: signs seen this run: ${downsSignage.map((s) => s.id).join(', ') || 'none'}`);
+    check(
+      'w1b',
+      'and so does the meadow - the door sign and the pond sign, observed fresh',
+      downsSignage.length
+        ? downsSignage.map((s) => `${s.id}:${s.strokes}`).join(' ')
+        : 'no signs',
+      'belfry + pond, both carved',
+      ['belfry', 'pond'].every((id) =>
+        downsSignage.some((s) => s.id === id && s.strokes > 0),
+      ),
+    );
 
     // The text those signs carry is checked where it can be checked exactly:
     // through the same cipher the game draws them with.

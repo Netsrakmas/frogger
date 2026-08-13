@@ -114,6 +114,10 @@ export function createSign(
     const merged = mergeGeometries(carved.map((c) => c.toNonIndexed()));
     for (const part of carved) part.dispose();
     const writing = new THREE.Mesh(merged, material('gold', { flatShading: true }));
+    // Named so the test probe can count the CARVING and nothing else - the
+    // slab body and its outline are also meshes under this root, and counting
+    // them made a sign that says nothing report strokes anyway.
+    writing.name = 'signWriting';
     writing.castShadow = false;
     root.add(writing);
     geometries.push(merged);
